@@ -23,6 +23,10 @@ class EEGPlotter:
             parent_widget: Parent tkinter widget to embed the plot
         """
         self.parent_widget = parent_widget
+        self.selected_annotation_channels = set()
+        self.display_settings = None
+        self.eeg_data = None
+        self.channel_spacing = 0
 
         # Create figure WITHOUT constrained_layout
         self.figure = Figure(figsize=(16, 12), dpi=100)
@@ -38,28 +42,62 @@ class EEGPlotter:
         self.mouse_press_callback = None
         self.mouse_release_callback = None
         self.mouse_move_callback = None
+        self.channel_selection_callback = None
     
-    def set_mouse_callbacks(self, press_callback=None, release_callback=None, move_callback=None):
+    def set_mouse_callbacks(self, press_callback=None, release_callback=None, move_callback=None, channel_selection_callback=None):
         """Set callbacks for mouse events."""
         self.mouse_press_callback = press_callback
         self.mouse_release_callback = release_callback
         self.mouse_move_callback = move_callback
+        self.channel_selection_callback = channel_selection_callback
     
     def _on_mouse_press(self, event):
         """Handle mouse press events."""
-        if self.mouse_press_callback:
+        if event.button == 3:  # Right-click for channel selection
+            self._handle_channel_selection_click(event)
+            return
+
+        if event.button == 1 and self.mouse_press_callback: # Left-click for annotation
             self.mouse_press_callback(event)
     
     def _on_mouse_release(self, event):
         """Handle mouse release events."""
-        if self.mouse_release_callback:
+        if event.button == 1 and self.mouse_release_callback:
             self.mouse_release_callback(event)
     
     def _on_mouse_move(self, event):
         """Handle mouse move events."""
-        if self.mouse_move_callback:
+        if event.button == 1 and self.mouse_move_callback:
             self.mouse_move_callback(event)
-    
+
+    def _handle_channel_selection_click(self, event):
+        """Handle right-clicks on the plot to select channels for annotation."""
+        if not event.inaxes or self.display_settings is None or self.eeg_data is None or self.channel_spacing == 0:
+            return
+
+        ax = event.inaxes
+        num_displayed_channels = len(ax.get_yticklabels())
+        
+        clicked_y = event.ydata
+        clicked_channel_display_index = round(clicked_y / self.channel_spacing)
+        clicked_channel_display_index = num_displayed_channels - 1 - clicked_channel_display_index
+
+        if 0 <= clicked_channel_display_index < num_displayed_channels:
+            displayed_channel_names = [self.eeg_data.channel_names[i] for i in self.display_settings.selected_channels] or self.eeg_data.channel_names
+            channel_name = displayed_channel_names[clicked_channel_display_index]
+
+            if channel_name in self.selected_annotation_channels:
+                self.selected_annotation_channels.remove(channel_name)
+            else:
+                self.selected_annotation_channels.add(channel_name)
+            
+            if self.channel_selection_callback:
+                self.channel_selection_callback(list(self.selected_annotation_channels))
+
+    def clear_channel_selection(self):
+        """Clear the set of selected channels for annotation."""
+        self.selected_annotation_channels.clear()
+
     def plot_eeg_data(self, eeg_data: EEGData,
                       display_settings: DisplaySettings,
                       current_window_start: float,
@@ -71,22 +109,20 @@ class EEGPlotter:
         if eeg_data is None:
             return
 
+        self.eeg_data = eeg_data
+        self.display_settings = display_settings
         self.figure.clear()
 
-        # Get selected channel data
         selected_data, selected_names = self._get_selected_channel_data(
             eeg_data, display_settings.selected_channels
         )
 
-        # Calculate sample indices for current window
         samples_per_window = int(display_settings.time_scale * eeg_data.sampling_freq)
         start_sample = int(current_window_start * eeg_data.sampling_freq)
         end_sample = min(start_sample + samples_per_window, selected_data.shape[1])
 
-        # Get data for current window
         window_data = selected_data[:, start_sample:end_sample]
 
-        # Apply filtering only on the window (fast) if requested
         if (display_settings.lowpass_filter is not None) or (display_settings.highpass_filter is not None):
             window_data = FilterHandler.apply_filters_array(
                 data=window_data,
@@ -96,8 +132,6 @@ class EEGPlotter:
                 highpass=display_settings.highpass_filter,
             )
 
-        # Decimate for performance when the window contains many samples
-        # Target roughly one x-value per pixel
         num_window_samples = window_data.shape[1]
         canvas_width = self.canvas.get_tk_widget().winfo_width() or 1500
         max_points = max(800, int(canvas_width) - 50)
@@ -105,50 +139,39 @@ class EEGPlotter:
         if decim > 1:
             window_data = window_data[:, ::decim]
 
-        # Time axis matching the (possibly decimated) data
         time_axis = np.linspace(
             current_window_start,
             current_window_start + display_settings.time_scale,
             window_data.shape[1]
         )
 
-        # Calculate channel spacing
-        channel_spacing = self._calculate_channel_spacing(
+        self.channel_spacing = self._calculate_channel_spacing(
             window_data, display_settings.amplitude_scale
         )
 
-        # Create plot
         ax = self.figure.add_subplot(111)
-
-        # Force the axes to fill almost the entire canvas
-        ax.set_position([0.08, 0.07, 0.90, 0.88])  # [left, bottom, width, height]
+        ax.set_position([0.08, 0.07, 0.90, 0.88])
         ax.margins(x=0.002)
 
-        # Plot channels
         self._plot_channels(ax, time_axis, window_data, selected_names,
-                            channel_spacing, display_settings.amplitude_scale)
+                            self.channel_spacing, display_settings.amplitude_scale)
 
-        # Customize plot appearance
         self._customize_plot(ax, time_axis, window_data, selected_names, display_settings,
                              current_window_start, eeg_data.channel_names)
 
-        # Draw annotations and selection
         if annotations:
             self._draw_annotations(ax, annotations, current_window_start,
-                                   display_settings.time_scale)
+                                   display_settings.time_scale, self.channel_spacing)
 
         if selection_state.has_selection:
             self._draw_selection(ax, selection_state, current_window_start,
                                  display_settings.time_scale)
 
-        # Reduce default padding around plot
         self.figure.subplots_adjust(left=0.06, right=0.995, top=0.92, bottom=0.08)
-
         self.canvas.draw_idle()
     
     def _get_selected_channel_data(self, eeg_data: EEGData,
                                   selected_channels: List[int]) -> Tuple[np.ndarray, List[str]]:
-        """Get data for selected channels only."""
         if not selected_channels:
             return eeg_data.data, eeg_data.channel_names
         
@@ -158,44 +181,29 @@ class EEGPlotter:
     
     def _calculate_channel_spacing(self, window_data: np.ndarray, 
                                  amplitude_scale: float) -> float:
-        """Calculate appropriate channel spacing."""
+        if window_data.size == 0:
+            return 1.0
         channel_stds = np.std(window_data, axis=1)
-        median_std = np.median(channel_stds)
-        base_channel_spacing = median_std * 6  # Base spacing without amplitude scaling
-        
-        # Apply amplitude scaling to spacing (inverse for spacing)
+        median_std = np.median(channel_stds[channel_stds > 0])
+        if median_std == 0 or np.isnan(median_std):
+            median_std = 1e-5
+        base_channel_spacing = median_std * 6
         scaled_channel_spacing = base_channel_spacing / amplitude_scale
-        
-        # Minimum spacing to ensure visibility
-        if scaled_channel_spacing < 1e-6:
-            scaled_channel_spacing = 1e-5
-        
-        return scaled_channel_spacing
+        return max(1e-5, scaled_channel_spacing)
     
     def _plot_channels(self, ax, time_axis: np.ndarray, window_data: np.ndarray,
                       channel_names: List[str], channel_spacing: float, 
                       amplitude_scale: float) -> None:
-        """Plot all EEG channels efficiently using LineCollection."""
-        from matplotlib.collections import LineCollection
-
         num_channels = len(channel_names)
 
-        # Compute Y offsets (top-to-bottom) and add to scaled data in one shot
-        baselines = np.arange(num_channels - 1, -1, -1, dtype=float) * channel_spacing
-        plot_data = window_data * amplitude_scale + baselines[:, None]
-
-        # Build segments array for LineCollection: (n_lines, N, 2)
-        x = time_axis[np.newaxis, :].repeat(num_channels, axis=0)
-        segments = np.stack((x, plot_data), axis=2)
-
-        lc = LineCollection(segments, colors='b', linewidths=0.7, alpha=0.9)
-        ax.add_collection(lc)
+        for i in range(num_channels):
+            y_offset = (num_channels - 1 - i) * channel_spacing
+            color = 'red' if channel_names[i] in self.selected_annotation_channels else 'b'
+            ax.plot(time_axis, window_data[i] * amplitude_scale + y_offset, color=color, linewidth=0.7)
 
     def _customize_plot(self, ax, time_axis: np.ndarray, window_data: np.ndarray,
                        channel_names: List[str], display_settings: DisplaySettings, 
                        current_window_start: float, all_channel_names: List[str]) -> None:
-        """Customize plot appearance and styling."""
-        # Labels and title
         channel_info = (f" ({len(channel_names)}/{len(all_channel_names)} channels)" 
                        if len(channel_names) != len(all_channel_names) else "")
         
@@ -209,67 +217,68 @@ class EEGPlotter:
         ax.set_xlabel('Time (seconds)', fontsize=9, labelpad=2)
         ax.set_ylabel('Channels', fontsize=9, labelpad=2)
         
-        # Add time grid lines every second
         time_grid_lines = np.arange(np.ceil(time_axis[0]), np.floor(time_axis[-1]) + 1)
         for grid_time in time_grid_lines:
             ax.axvline(x=grid_time, color='gray', alpha=0.3, linestyle='--', linewidth=0.5)
         
-        # Add subtle horizontal grid
         ax.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
         
-        # Set axis limits
-        time_margin = (time_axis[-1] - time_axis[0]) * 0.01
-        ax.set_xlim(time_axis[0] - time_margin, time_axis[-1] + time_margin)
+        time_margin = (time_axis[-1] - time_axis[0]) * 0.01 if time_axis.size > 0 else 0.01
+        ax.set_xlim(time_axis[0] - time_margin, time_axis[-1] + time_margin) if time_axis.size > 0 else None
         
-        # Set y-axis limits and place tick labels at each channel baseline
         num_channels = len(channel_names)
-        channel_spacing = self._calculate_channel_spacing(
-            window_data, display_settings.amplitude_scale
-        )
-        y_margin = channel_spacing * 0.5
-        ax.set_ylim(-y_margin, num_channels * channel_spacing + y_margin)
+        y_margin = self.channel_spacing * 0.5
+        ax.set_ylim(-y_margin, num_channels * self.channel_spacing - y_margin)
 
-        # Place y-ticks aligned with traces and label them with channel names
-        y_positions = [(num_channels - i - 1) * channel_spacing for i in range(num_channels)]
+        y_positions = [(num_channels - 1 - i) * self.channel_spacing for i in range(num_channels)]
         ax.set_yticks(y_positions)
         ax.set_yticklabels(channel_names, fontsize=7)
         ax.tick_params(axis='y', which='both', length=0, pad=2)
         ax.yaxis.set_ticks_position('left')
-        
-        # Style the plot to look more like medical EEG software
+
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_linewidth(0.5)
         ax.spines['bottom'].set_linewidth(0.5)
     
     def _draw_annotations(self, ax, annotations: List[Annotation], 
-                         window_start: float, window_size: float) -> None:
-        """Draw existing annotations on the plot."""
+                         window_start: float, window_size: float, channel_spacing: float) -> None:
         window_end = window_start + window_size
-        
+        displayed_channel_names = [self.eeg_data.channel_names[i] for i in self.display_settings.selected_channels] or self.eeg_data.channel_names
+        num_displayed_channels = len(displayed_channel_names)
+
         for annotation in annotations:
-            start_time = annotation.start_time
-            end_time = annotation.end_time
-            
-            # Check if annotation overlaps with current window
-            if start_time < window_end and end_time > window_start:
-                # Calculate visible portion
-                visible_start = max(start_time, window_start)
-                visible_end = min(end_time, window_end)
-                
-                ax.axvspan(visible_start, visible_end, color=annotation.color,
-                          label='Annotation' if not ax.get_legend_handles_labels()[1] else "")
+            if not annotation.channels:
+                if annotation.start_time < window_end and annotation.end_time > window_start:
+                    visible_start = max(annotation.start_time, window_start)
+                    visible_end = min(annotation.end_time, window_end)
+                    ax.axvspan(visible_start, visible_end, color=annotation.color, zorder=0)
+            else:
+                for channel_name in annotation.channels:
+                    if channel_name in displayed_channel_names:
+                        if annotation.start_time < window_end and annotation.end_time > window_start:
+                            visible_start = max(annotation.start_time, window_start)
+                            visible_end = min(annotation.end_time, window_end)
+                            try:
+                                display_index = displayed_channel_names.index(channel_name)
+                                y_pos = (num_displayed_channels - 1 - display_index) * channel_spacing
+                                ax.axhspan(y_pos - channel_spacing / 2, y_pos + channel_spacing / 2, 
+                                          xmin=(visible_start - window_start) / window_size, 
+                                          xmax=(visible_end - window_start) / window_size, 
+                                          color=annotation.color, zorder=0)
+                            except ValueError:
+                                pass
     
     def _draw_selection(self, ax, selection_state: SelectionState, 
                        window_start: float, window_size: float) -> None:
-        """Draw current selection if active."""
+        if not selection_state.has_selection:
+            return
         window_end = window_start + window_size
         selection_start = max(selection_state.start_time, window_start)
         selection_end = min(selection_state.end_time, window_end)
         
         if selection_start < selection_end:
-            ax.axvspan(selection_start, selection_end, alpha=0.3, color='yellow',
-                      label='Current Selection', zorder=10)
+            ax.axvspan(selection_start, selection_end, alpha=0.3, color='yellow', zorder=10)
     
     def clear(self):
         """Clear the current plot."""

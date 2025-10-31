@@ -148,13 +148,12 @@ class AnnotationFileHandler:
             annotations = {}
             for key, ann_list in data.get("annotations", {}).items():
                 annotations[key] = [
-                    Annotation(
+                    Annotation.create(
                         text=ann['text'],
                         start_time=ann['startTime'],
                         end_time=ann['endTime'],
-                        timestamp=ann['timestamp'],
-                        duration=ann['duration'],
-                        color=ann['color'] # Ensure color is loaded
+                        color=ann['color'],
+                        channels=ann.get('channels', []) # Use .get for backward compatibility
                     )
                     for ann in ann_list
                 ]

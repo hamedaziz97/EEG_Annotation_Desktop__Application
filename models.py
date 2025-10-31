@@ -2,7 +2,7 @@
 Data models and configuration classes for the EEG Dashboard application.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -38,9 +38,10 @@ class Annotation:
     timestamp: str
     duration: float
     color: str
+    channels: Optional[List[str]] = field(default_factory=list)
 
     @classmethod
-    def create(cls, text: str, start_time: float, end_time: float, color: str) -> 'Annotation':
+    def create(cls, text: str, start_time: float, end_time: float, color: str, channels: Optional[List[str]] = None) -> 'Annotation':
         """Create a new annotation with current timestamp."""
         duration = abs(end_time - start_time)
         return cls(
@@ -49,7 +50,8 @@ class Annotation:
             end_time=round(end_time, 3),
             timestamp=datetime.now().isoformat(),
             duration=round(duration, 3),
-            color=color
+            color=color,
+            channels=channels or []
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -60,7 +62,8 @@ class Annotation:
             'endTime': self.end_time,
             'timestamp': self.timestamp,
             'duration': self.duration,
-            'color': self.color
+            'color': self.color,
+            'channels': self.channels
         }
 
 

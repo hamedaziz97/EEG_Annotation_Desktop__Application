@@ -100,6 +100,9 @@ python main.py
 - **Channel Management**: Select which channels to display
 - **Filtering**: Apply lowpass and highpass filters
 - **Navigation**: Navigate through EEG data in time windows
+- **Color-Coded Annotations**: Annotations are color-coded by type (e.g., Seizure, Artifact).
+- **Channel-Specific Annotations**: Right-click on a channel trace to select it for annotation. Annotations can be applied to single or multiple channels.
+- **Default Annotation**: The annotation dialog defaults to "Seizure" for faster workflow.
 
 ## Module Dependencies
 

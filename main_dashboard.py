@@ -73,7 +73,8 @@ class EEGDashboard:
         self.plotter.set_mouse_callbacks(
             press_callback=self._on_mouse_press,
             release_callback=self._on_mouse_release,
-            move_callback=self._on_mouse_move
+            move_callback=self._on_mouse_move,
+            channel_selection_callback=self._on_channel_selection
         )
 
     def _on_time_scale_change(self, new_time_scale: float):
@@ -140,6 +141,11 @@ class EEGDashboard:
     def _on_channel_selection_apply(self, selected_channels: list):
         """Handle channel selection apply."""
         self.display_settings.selected_channels = selected_channels
+        self._update_plot()
+
+    def _on_channel_selection(self, selected_channels: list):
+        """Handle annotation channel selection."""
+        self.annotation_manager.set_selected_channels(selected_channels)
         self._update_plot()
 
     def _on_mouse_press(self, event):

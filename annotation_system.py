@@ -25,6 +25,7 @@ class AnnotationManager:
         self.annotation_collection = None
         self.on_selection_change = on_selection_change
         self.predefined_annotations = ["Seizure", "Artifact", "Spike", "Sleep"]
+        self.selected_channels = []
         self.annotation_colors = {
             "Seizure": (1.0, 0.0, 0.0, 0.3),
             "Artifact": (0.0, 1.0, 0.0, 0.3),
@@ -35,6 +36,10 @@ class AnnotationManager:
     def set_annotation_collection(self, collection: AnnotationCollection):
         """Set the current annotation collection."""
         self.annotation_collection = collection
+
+    def set_selected_channels(self, channels: List[str]):
+        """Set the currently selected channels for annotation."""
+        self.selected_channels = channels
 
     def handle_mouse_press(self, event, is_annotation_mode_enabled: bool):
         """Handle mouse press event for annotation selection."""
@@ -133,7 +138,8 @@ class AnnotationManager:
             text=text,
             start_time=self.selection_state.start_time,
             end_time=self.selection_state.end_time,
-            color=color
+            color=color,
+            channels=self.selected_channels
         )
 
         # Add to collection
@@ -225,7 +231,7 @@ class AnnotationValidator:
     @staticmethod
     def validate_annotation_data(annotation_data: dict) -> bool:
         """Validate annotation data dictionary."""
-        required_fields = ['text', 'startTime', 'endTime', 'timestamp', 'duration', 'color']
+        required_fields = ['text', 'startTime', 'endTime', 'timestamp', 'duration', 'color', 'channels']
         return all(field in annotation_data for field in required_fields)
 
 
