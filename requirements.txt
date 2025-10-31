@@ -1,0 +1,16 @@
+# EEG Dashboard Requirements
+# Core dependencies for EEG data processing and visualization
+
+# Scientific computing
+numpy>=1.21.0
+matplotlib>=3.5.0
+
+# EEG data processing
+mne>=1.0.0
+
+# GUI framework (included with Python)
+# tkinter - built into Python standard library
+
+# Optional: For enhanced performance
+# scipy>=1.7.0  # Already included with MNE
+# pandas>=1.3.0  # Already included with MNE
