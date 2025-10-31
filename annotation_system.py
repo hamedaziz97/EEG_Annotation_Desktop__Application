@@ -5,8 +5,8 @@ Annotation system module for selection and management of EEG annotations.
 from typing import List, Optional, Callable
 from tkinter import messagebox
 
-from SourceLocalization.scripts.dashboard.models import Annotation, AnnotationCollection, SelectionState
-from SourceLocalization.scripts.dashboard.ui_components import AnnotationDialog
+from EEG_Annotation_Desktop__Application.models import Annotation, AnnotationCollection, SelectionState
+from EEG_Annotation_Desktop__Application.ui_components import AnnotationDialog
 
 
 class AnnotationManager:

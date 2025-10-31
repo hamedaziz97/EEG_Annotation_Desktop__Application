@@ -9,7 +9,7 @@ import mne
 import numpy as np
 from tkinter import filedialog, messagebox
 
-from SourceLocalization.scripts.dashboard.models import EEGData, AnnotationCollection, Annotation
+from EEG_Annotation_Desktop__Application.models import EEGData, AnnotationCollection, Annotation
 
 
 class EEGFileHandler:

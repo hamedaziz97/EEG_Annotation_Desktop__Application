@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import List, Callable, Optional
 
-from SourceLocalization.scripts.dashboard.models import DisplaySettings
+from EEG_Annotation_Desktop__Application.models import DisplaySettings
 
 
 class AnnotationDialog(tk.Toplevel):

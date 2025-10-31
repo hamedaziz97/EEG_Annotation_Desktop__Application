@@ -3,7 +3,7 @@ Main entry point for the EEG Dashboard application.
 """
 
 import tkinter as tk
-from SourceLocalization.scripts.dashboard.main_dashboard import EEGDashboard
+from EEG_Annotation_Desktop__Application.main_dashboard import EEGDashboard
 
 
 def main():

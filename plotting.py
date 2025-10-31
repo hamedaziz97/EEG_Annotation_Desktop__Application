@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from typing import List, Optional, Tuple
-from SourceLocalization.scripts.dashboard.file_handlers import FilterHandler
+from EEG_Annotation_Desktop__Application.file_handlers import FilterHandler
 
-from SourceLocalization.scripts.dashboard.models import EEGData, DisplaySettings, SelectionState, Annotation
+from EEG_Annotation_Desktop__Application.models import EEGData, DisplaySettings, SelectionState, Annotation
 
 
 class EEGPlotter:

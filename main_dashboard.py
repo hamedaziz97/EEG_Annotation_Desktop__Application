@@ -7,12 +7,12 @@ from tkinter import ttk, messagebox
 import os
 import numpy as np
 
-from SourceLocalization.scripts.dashboard.models import EEGData, DisplaySettings, AnnotationCollection
+from EEG_Annotation_Desktop__Application.models import EEGData, DisplaySettings, AnnotationCollection
 # FilterHandler is no longer needed here, as filtering is delegated to the plotter
-from SourceLocalization.scripts.dashboard.file_handlers import EEGFileHandler, AnnotationFileHandler
-from SourceLocalization.scripts.dashboard.plotting import EEGPlotter
-from SourceLocalization.scripts.dashboard.ui_components import ControlPanel, AnnotationPanel, ChannelSettingsDialog
-from SourceLocalization.scripts.dashboard.annotation_system import AnnotationManager
+from EEG_Annotation_Desktop__Application.file_handlers import EEGFileHandler, AnnotationFileHandler
+from EEG_Annotation_Desktop__Application.plotting import EEGPlotter
+from EEG_Annotation_Desktop__Application.ui_components import ControlPanel, AnnotationPanel, ChannelSettingsDialog
+from EEG_Annotation_Desktop__Application.annotation_system import AnnotationManager
 
 
 class EEGDashboard:
