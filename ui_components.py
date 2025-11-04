@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import List, Callable, Optional
 
-from EEG_Annotation_Desktop__Application.models import DisplaySettings
+from EEG_Annotation_Desktop__Application.models import DisplaySettings, Annotation
 
 
 class AnnotationDialog(tk.Toplevel):
@@ -81,6 +81,118 @@ class AnnotationDialog(tk.Toplevel):
             self.destroy()
         else:
             messagebox.showwarning("Input Required", "Please select or enter an annotation.", parent=self)
+
+    def _on_cancel(self, event=None):
+        """Handle Cancel button click or Escape key press."""
+        self.result = None
+        self.destroy()
+
+
+class EditAnnotationDialog(tk.Toplevel):
+    """Dialog for editing an annotation label and time range."""
+
+    def __init__(self, parent, annotation: Annotation, predefined_annotations: List[str]):
+        """
+        Initialize the annotation edit dialog.
+
+        Args:
+            parent: The parent window.
+            annotation: The annotation to edit.
+            predefined_annotations: A list of common annotations to suggest.
+        """
+        super().__init__(parent)
+        self.parent = parent
+        self.result: Optional[dict] = None
+        self.annotation = annotation
+
+        self.title("Edit Annotation")
+        self.geometry("350x200")
+        self.resizable(False, False)
+
+        # Make window modal
+        self.transient(parent)
+        self.grab_set()
+
+        self._create_widgets(predefined_annotations)
+        self._center_window()
+
+        # Bind Enter/Escape keys
+        self.bind("<Return>", self._on_ok)
+        self.bind("<Escape>", self._on_cancel)
+
+        # Set focus and wait for user interaction
+        self.combobox.focus_set()
+        self.wait_window(self)
+
+    def _create_widgets(self, predefined_annotations: List[str]):
+        """Create the dialog's widgets."""
+        main_frame = ttk.Frame(self, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Annotation label
+        ttk.Label(main_frame, text="Annotation Label:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        self.combo_var = tk.StringVar(value=self.annotation.text)
+        self.combobox = ttk.Combobox(main_frame, textvariable=self.combo_var, values=predefined_annotations)
+        self.combobox.grid(row=0, column=1, sticky=tk.EW, pady=(0, 5))
+
+        # Start time
+        ttk.Label(main_frame, text="Start Time (s):").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
+        self.start_time_var = tk.StringVar(value=f"{self.annotation.start_time:.2f}")
+        self.start_time_entry = ttk.Entry(main_frame, textvariable=self.start_time_var)
+        self.start_time_entry.grid(row=1, column=1, sticky=tk.EW, pady=(0, 5))
+
+        # End time
+        ttk.Label(main_frame, text="End Time (s):").grid(row=2, column=0, sticky=tk.W, pady=(0, 15))
+        self.end_time_var = tk.StringVar(value=f"{self.annotation.end_time:.2f}")
+        self.end_time_entry = ttk.Entry(main_frame, textvariable=self.end_time_var)
+        self.end_time_entry.grid(row=2, column=1, sticky=tk.EW, pady=(0, 15))
+
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=3, column=0, columnspan=2, sticky=tk.E)
+
+        ttk.Button(button_frame, text="OK", command=self._on_ok, style="Accent.TButton").pack(side=tk.RIGHT, padx=(5, 0))
+        ttk.Button(button_frame, text="Cancel", command=self._on_cancel).pack(side=tk.RIGHT)
+
+        main_frame.columnconfigure(1, weight=1)
+
+    def _center_window(self):
+        """Center the dialog on the parent window."""
+        self.update_idletasks()
+        parent_x = self.parent.winfo_x()
+        parent_y = self.parent.winfo_y()
+        parent_w = self.parent.winfo_width()
+        parent_h = self.parent.winfo_height()
+        dialog_w = self.winfo_width()
+        dialog_h = self.winfo_height()
+        x = parent_x + (parent_w - dialog_w) // 2
+        y = parent_y + (parent_h - dialog_h) // 2
+        self.geometry(f"+{x}+{y}")
+
+    def _on_ok(self, event=None):
+        """Handle OK button click or Enter key press."""
+        label = self.combo_var.get().strip()
+        if not label:
+            messagebox.showwarning("Input Required", "Please enter an annotation label.", parent=self)
+            return
+
+        try:
+            start_time = float(self.start_time_var.get())
+            end_time = float(self.end_time_var.get())
+        except ValueError:
+            messagebox.showwarning("Invalid Input", "Start and end times must be numbers.", parent=self)
+            return
+
+        if start_time >= end_time:
+            messagebox.showwarning("Invalid Input", "Start time must be less than end time.", parent=self)
+            return
+
+        self.result = {
+            "text": label,
+            "start_time": start_time,
+            "end_time": end_time
+        }
+        self.destroy()
 
     def _on_cancel(self, event=None):
         """Handle Cancel button click or Escape key press."""
@@ -410,17 +522,21 @@ class AnnotationPanel:
     """Panel for annotation controls and display."""
 
     def __init__(self, parent, on_add_annotation: Callable[[str], None],
-                 on_clear_selection: Callable[[], None],
+                 on_delete_selected: Callable[[], None],
                  on_save_annotations: Callable[[], None],
-                 on_load_annotations: Callable[[], None]):
+                 on_load_annotations: Callable[[], None],
+                 on_edit_annotation: Callable[[], None]):
         """
         Initialize annotation panel.
         """
         self.parent = parent
         self.on_add_annotation = on_add_annotation
-        self.on_clear_selection = on_clear_selection
+        self.on_delete_selected = on_delete_selected
         self.on_save_annotations = on_save_annotations
         self.on_load_annotations = on_load_annotations
+        self.on_edit_annotation = on_edit_annotation
+
+        self.annotation_listbox = None
 
         self._create_widgets()
 
@@ -454,9 +570,6 @@ class AnnotationPanel:
         self.selection_info_label = ttk.Label(middle_frame, text="Selection: None")
         self.selection_info_label.pack(side=tk.LEFT, padx=(0, 10), fill='x', expand=True)
 
-        ttk.Button(middle_frame, text="Clear Selection",
-                  command=self.on_clear_selection).pack(side=tk.LEFT, padx=(0, 5))
-
         # --- Bottom row: File operations ---
         bottom_frame = ttk.Frame(main_frame)
         bottom_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
@@ -464,15 +577,18 @@ class AnnotationPanel:
         ttk.Button(bottom_frame, text="Save Annotations",
                   command=self.on_save_annotations).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(bottom_frame, text="Load Annotations",
-                  command=self.on_load_annotations).pack(side=tk.LEFT)
+                  command=self.on_load_annotations).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(bottom_frame, text="Delete Selected",
+                  command=self.on_delete_selected).pack(side=tk.LEFT)
 
         # --- Current annotations display ---
         display_frame = ttk.Frame(self.parent)
         display_frame.pack(fill=tk.X, pady=(0, 10))
 
         ttk.Label(display_frame, text="Annotations in Current Window:").pack(anchor=tk.W)
-        self.current_annotations_text = tk.Text(display_frame, height=4, relief='solid', borderwidth=1)
-        self.current_annotations_text.pack(fill=tk.X, pady=(2,0))
+        self.annotation_listbox = tk.Listbox(display_frame, height=4, relief='solid', borderwidth=1)
+        self.annotation_listbox.pack(fill=tk.X, pady=(2,0))
+        self.annotation_listbox.bind("<Double-1>", self.on_edit_annotation)
 
     def _on_add_annotation(self):
         """Handle add annotation button click."""
@@ -489,10 +605,18 @@ class AnnotationPanel:
         else:
             self.selection_info_label.config(text="Selection: None")
 
-    def update_annotations_display(self, annotations_text: str):
+    def update_annotations_display(self, annotations: List[Annotation]):
         """Update the current annotations display."""
-        self.current_annotations_text.delete(1.0, tk.END)
-        self.current_annotations_text.insert(tk.END, annotations_text)
+        self.annotation_listbox.delete(0, tk.END)
+        for i, annotation in enumerate(annotations):
+            self.annotation_listbox.insert(tk.END, f"{i+1}. {annotation.text} ({annotation.start_time:.2f}s - {annotation.end_time:.2f}s)")
+
+    def get_selected_annotation_index(self) -> Optional[int]:
+        """Get the index of the selected annotation in the listbox."""
+        selection = self.annotation_listbox.curselection()
+        if selection:
+            return selection[0]
+        return None
 
     def is_annotation_mode_enabled(self) -> bool:
         """Check if annotation mode is enabled."""

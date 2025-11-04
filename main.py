@@ -8,9 +8,9 @@ from EEG_Annotation_Desktop__Application.main_dashboard import EEGDashboard
 
 def main():
     """Main function to run the EEG dashboard."""
-    root_window = tk.Tk()
-    app = EEGDashboard(root_window)
-    app.run()
+    root = tk.Tk()
+    app = EEGDashboard(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":

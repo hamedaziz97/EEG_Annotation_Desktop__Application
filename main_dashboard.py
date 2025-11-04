@@ -11,7 +11,7 @@ from EEG_Annotation_Desktop__Application.models import EEGData, DisplaySettings,
 # FilterHandler is no longer needed here, as filtering is delegated to the plotter
 from EEG_Annotation_Desktop__Application.file_handlers import EEGFileHandler, AnnotationFileHandler
 from EEG_Annotation_Desktop__Application.plotting import EEGPlotter
-from EEG_Annotation_Desktop__Application.ui_components import ControlPanel, AnnotationPanel, ChannelSettingsDialog
+from EEG_Annotation_Desktop__Application.ui_components import ControlPanel, AnnotationPanel, ChannelSettingsDialog, EditAnnotationDialog
 from EEG_Annotation_Desktop__Application.annotation_system import AnnotationManager
 
 
@@ -63,9 +63,10 @@ class EEGDashboard:
         self.annotation_panel = AnnotationPanel(
             parent=main_frame,
             on_add_annotation=self._on_add_annotation,
-            on_clear_selection=self._on_clear_selection,
+            on_delete_selected=self._on_delete_selected_annotation,
             on_save_annotations=self._on_save_annotations,
-            on_load_annotations=self._on_load_annotations
+            on_load_annotations=self._on_load_annotations,
+            on_edit_annotation=self._on_edit_annotation
         )
 
         # Create plotter
@@ -179,14 +180,57 @@ class EEGDashboard:
             self._update_plot()
             self._update_annotations_display()
 
-    def _on_clear_selection(self):
-        """Handle clear selection."""
-        self.annotation_manager.clear_selection()
-
     def _on_add_annotation(self, text: str):
         """Handle add annotation."""
         # This is now triggered automatically by the dialog workflow
         pass
+
+    def _on_delete_selected_annotation(self):
+        """Handle delete selected annotation button click."""
+        selected_index = self.annotation_panel.get_selected_annotation_index()
+        if selected_index is None:
+            messagebox.showwarning("Warning", "Please select an annotation to delete.")
+            return
+
+        if not self.annotation_collection or not self.annotation_collection.annotations:
+            return
+
+        # Find the key of the selected annotation
+        annotations_in_window = self.annotation_manager.get_annotations_in_window(
+            self.current_window_start, self.current_window_start + self.display_settings.time_scale
+        )
+        if selected_index < len(annotations_in_window):
+            annotation_to_delete = annotations_in_window[selected_index]
+            key_to_delete = None
+            for key, ann_list in self.annotation_collection.annotations.items():
+                if annotation_to_delete in ann_list:
+                    key_to_delete = key
+                    break
+            
+            if key_to_delete:
+                del self.annotation_collection.annotations[key_to_delete]
+                self._update_plot()
+                self._update_annotations_display()
+
+    def _on_edit_annotation(self, event=None):
+        """Handle edit selected annotation."""
+        selected_index = self.annotation_panel.get_selected_annotation_index()
+        if selected_index is None:
+            return
+
+        annotations_in_window = self.annotation_manager.get_annotations_in_window(
+            self.current_window_start, self.current_window_start + self.display_settings.time_scale
+        )
+        if selected_index < len(annotations_in_window):
+            annotation_to_edit = annotations_in_window[selected_index]
+            
+            dialog = EditAnnotationDialog(self.root_window, annotation_to_edit, self.annotation_manager.predefined_annotations)
+            if dialog.result:
+                annotation_to_edit.text = dialog.result["text"]
+                annotation_to_edit.start_time = dialog.result["start_time"]
+                annotation_to_edit.end_time = dialog.result["end_time"]
+                self._update_plot()
+                self._update_annotations_display()
 
     def _on_save_annotations(self):
         """Handle save annotations."""
@@ -236,7 +280,7 @@ class EEGDashboard:
 
         # Clear any existing selection and annotation display
         self.annotation_manager.clear_selection()
-        self.annotation_panel.update_annotations_display("")
+        self.annotation_panel.update_annotations_display([])
 
         # Update display
         self._update_plot()
@@ -297,11 +341,11 @@ class EEGDashboard:
             return
 
         window_end = self.current_window_start + self.display_settings.time_scale
-        annotations_text = self.annotation_manager.get_annotations_display_text(
+        annotations = self.annotation_manager.get_annotations_in_window(
             self.current_window_start, window_end
         )
 
-        self.annotation_panel.update_annotations_display(annotations_text)
+        self.annotation_panel.update_annotations_display(annotations)
 
     def run(self):
         """Run the dashboard application."""
