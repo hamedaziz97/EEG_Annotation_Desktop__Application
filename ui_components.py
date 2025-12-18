@@ -1,5 +1,6 @@
 """
 UI components module for channel settings and control panels, refactored for PyQt6.
+Professional UI update.
 """
 
 from PyQt6.QtWidgets import (
@@ -7,7 +8,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QFormLayout, QMessageBox, QWidget, QCheckBox, QScrollArea,
     QPushButton, QHBoxLayout, QGroupBox, QListWidget, QListWidgetItem, QGridLayout,
     QSplitter, QFrame, QToolBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QSlider, QStyle, QAbstractItemView
+    QSlider, QStyle, QAbstractItemView, QSizePolicy, QSpacerItem
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon
@@ -23,10 +24,12 @@ class AnnotationDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Add Annotation")
         self.setMinimumWidth(350)
-
         self.result: Optional[str] = None
+        self._setup_ui(predefined_annotations)
 
+    def _setup_ui(self, predefined_annotations):
         layout = QVBoxLayout(self)
+        layout.setSpacing(15)
 
         label = QLabel("Select or enter an annotation label:")
         layout.addWidget(label)
@@ -34,7 +37,7 @@ class AnnotationDialog(QDialog):
         self.combobox = QComboBox(self)
         self.combobox.addItems(predefined_annotations)
         self.combobox.setEditable(True)
-        self.combobox.setEditText("Seizure")  # Default value
+        self.combobox.setEditText("Seizure")
         layout.addWidget(self.combobox)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -43,7 +46,6 @@ class AnnotationDialog(QDialog):
         layout.addWidget(self.button_box)
 
     def accept(self):
-        """Handle OK button click."""
         self.result = self.combobox.currentText().strip()
         if self.result:
             super().accept()
@@ -61,29 +63,31 @@ class EditAnnotationDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Edit Annotation")
         self.setMinimumWidth(350)
-
         self.result: Optional[dict] = None
         self.annotation = annotation
+        self._setup_ui(predefined_annotations)
 
+    def _setup_ui(self, predefined_annotations):
         layout = QFormLayout(self)
+        layout.setSpacing(10)
 
         self.combo_var = QComboBox(self)
         self.combo_var.addItems(predefined_annotations)
         self.combo_var.setEditable(True)
-        self.combo_var.setCurrentText(annotation.text)
-        layout.addRow("Annotation Label:", self.combo_var)
+        self.combo_var.setCurrentText(self.annotation.text)
+        layout.addRow("Label:", self.combo_var)
 
         self.start_time_spinbox = QDoubleSpinBox(self)
         self.start_time_spinbox.setRange(0, 999999)
-        self.start_time_spinbox.setValue(annotation.start_time)
-        self.start_time_spinbox.setDecimals(2)
-        layout.addRow("Start Time (s):", self.start_time_spinbox)
+        self.start_time_spinbox.setValue(self.annotation.start_time)
+        self.start_time_spinbox.setDecimals(3)
+        layout.addRow("Start (s):", self.start_time_spinbox)
 
         self.end_time_spinbox = QDoubleSpinBox(self)
         self.end_time_spinbox.setRange(0, 999999)
-        self.end_time_spinbox.setValue(annotation.end_time)
-        self.end_time_spinbox.setDecimals(2)
-        layout.addRow("End Time (s):", self.end_time_spinbox)
+        self.end_time_spinbox.setValue(self.annotation.end_time)
+        self.end_time_spinbox.setDecimals(3)
+        layout.addRow("End (s):", self.end_time_spinbox)
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self.accept)
@@ -114,6 +118,79 @@ class EditAnnotationDialog(QDialog):
         return self.result
 
 
+class ChannelSettingsDialog(QDialog):
+    """Dialog for channel selection settings."""
+    # Kept for compatibility if needed, though LeftSidebarWidget now handles this inline.
+    def __init__(self, parent: QWidget, channel_names: List[str],
+                 selected_channels: List[int],
+                 on_apply: Callable[[List[int]], None]):
+        super().__init__(parent)
+        self.channel_names = channel_names
+        self.selected_channels = selected_channels
+        self.on_apply = on_apply
+        self.setWindowTitle("Channel Selection")
+        self.setGeometry(0, 0, 400, 600)
+        self.channel_checkboxes: List[QCheckBox] = []
+        self._create_widgets()
+        self._center_window()
+
+    def _create_widgets(self):
+        layout = QVBoxLayout(self)
+        
+        info = QLabel(f"Select channels ({len(self.channel_names)} total):")
+        layout.addWidget(info)
+
+        btn_layout = QHBoxLayout()
+        for text, slot in [("All", self._select_all), ("None", self._deselect_all), ("Standard", self._select_standard_eeg)]:
+            btn = QPushButton(text)
+            btn.clicked.connect(slot)
+            btn_layout.addWidget(btn)
+        layout.addLayout(btn_layout)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        self.scroll_layout = QVBoxLayout(content)
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+
+        for i, name in enumerate(self.channel_names):
+            cb = QCheckBox(f"{i + 1}. {name}")
+            cb.setChecked(i in self.selected_channels if self.selected_channels else True)
+            self.channel_checkboxes.append(cb)
+            self.scroll_layout.addWidget(cb)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _center_window(self):
+        if self.parent():
+            geo = self.parent().frameGeometry()
+            self.move(geo.center() - self.rect().center())
+
+    def _select_all(self):
+        for cb in self.channel_checkboxes: cb.setChecked(True)
+
+    def _deselect_all(self):
+        for cb in self.channel_checkboxes: cb.setChecked(False)
+
+    def _select_standard_eeg(self):
+        std = ['FP1', 'FP2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6', 'FZ', 'CZ', 'PZ']
+        self._deselect_all()
+        for i, name in enumerate(self.channel_names):
+            if name.upper() in std: self.channel_checkboxes[i].setChecked(True)
+
+    def accept(self):
+        selected = [i for i, cb in enumerate(self.channel_checkboxes) if cb.isChecked()]
+        if not selected:
+            QMessageBox.warning(self, "Warning", "Select at least one channel.")
+            return
+        self.on_apply(selected)
+        super().accept()
+
+
 class LeftSidebarWidget(QWidget):
     """Left sidebar with file, channel, filter, and display settings."""
 
@@ -135,97 +212,103 @@ class LeftSidebarWidget(QWidget):
         self.channel_checkboxes = []
         self.amplitude_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 
-        self.setMinimumWidth(260)
+        self.setMinimumWidth(280)
         self.setMaximumWidth(320)
-
         self._create_widgets()
 
     def _create_widgets(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         self.toolbox = QToolBox()
-        main_layout.addWidget(self.toolbox)
+        layout.addWidget(self.toolbox)
 
-        # --- A. File Section ---
-        file_widget = QWidget()
-        file_layout = QVBoxLayout(file_widget)
+        # --- A. File / Dataset Section ---
+        file_page = QWidget()
+        file_layout = QVBoxLayout(file_page)
+        file_layout.setSpacing(15)
+        file_layout.setContentsMargins(10, 15, 10, 15)
         
         load_btn = QPushButton("Load EEG File")
-        load_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        load_btn.setObjectName("primaryButton")
+        load_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        load_btn.setMinimumHeight(32)
         load_btn.clicked.connect(lambda: self.on_load_file())
         file_layout.addWidget(load_btn)
         
-        # File Info Labels
-        self.lbl_filename = QLabel("Filename: -")
-        self.lbl_filename.setWordWrap(True)
-        self.lbl_duration = QLabel("Duration: -")
-        self.lbl_sfreq = QLabel("Sampling Rate: -")
-        self.lbl_channels = QLabel("Channels: -")
+        # File Info Card
+        info_frame = QFrame()
+        info_frame.setObjectName("infoCard")
+        info_layout = QVBoxLayout(info_frame)
+        info_layout.setSpacing(8)
         
-        info_box = QGroupBox("File Info")
-        info_layout = QVBoxLayout(info_box)
+        self.lbl_filename = self._create_info_label("Filename", "-")
+        self.lbl_duration = self._create_info_label("Duration", "-")
+        self.lbl_sfreq = self._create_info_label("Sampling Rate", "-")
+        self.lbl_channels = self._create_info_label("Channels", "-")
+        
         info_layout.addWidget(self.lbl_filename)
         info_layout.addWidget(self.lbl_duration)
         info_layout.addWidget(self.lbl_sfreq)
         info_layout.addWidget(self.lbl_channels)
-        file_layout.addWidget(info_box)
+        file_layout.addWidget(info_frame)
         
         file_layout.addStretch()
-        self.toolbox.addItem(file_widget, "File")
+        self.toolbox.addItem(file_page, "Dataset")
 
         # --- B. Channel Settings ---
-        channel_widget = QWidget()
-        channel_layout = QVBoxLayout(channel_widget)
+        channel_page = QWidget()
+        channel_layout = QVBoxLayout(channel_page)
+        channel_layout.setContentsMargins(10, 10, 10, 10)
         
         btn_layout = QHBoxLayout()
-        sel_all_btn = QPushButton("All")
-        sel_all_btn.clicked.connect(self._select_all_channels)
-        btn_layout.addWidget(sel_all_btn)
-        
-        sel_none_btn = QPushButton("None")
-        sel_none_btn.clicked.connect(self._deselect_all_channels)
-        btn_layout.addWidget(sel_none_btn)
-        
-        sel_std_btn = QPushButton("Standard")
-        sel_std_btn.clicked.connect(self._select_standard_channels)
-        btn_layout.addWidget(sel_std_btn)
+        for text, slot in [("All", self._select_all_channels), ("None", self._deselect_all_channels), ("Std", self._select_standard_channels)]:
+            btn = QPushButton(text)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(slot)
+            btn_layout.addWidget(btn)
         channel_layout.addLayout(btn_layout)
 
         self.channel_scroll = QScrollArea()
         self.channel_scroll.setWidgetResizable(True)
+        self.channel_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.channel_content = QWidget()
         self.channel_list_layout = QVBoxLayout(self.channel_content)
+        self.channel_list_layout.setSpacing(2)
         self.channel_scroll.setWidget(self.channel_content)
         channel_layout.addWidget(self.channel_scroll)
         
-        apply_channels_btn = QPushButton("Apply Channel Selection")
+        apply_channels_btn = QPushButton("Apply Selection")
+        apply_channels_btn.setObjectName("primaryButton")
+        apply_channels_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         apply_channels_btn.clicked.connect(self._apply_channel_selection)
         channel_layout.addWidget(apply_channels_btn)
 
-        self.toolbox.addItem(channel_widget, "Channels")
+        self.toolbox.addItem(channel_page, "Channels")
 
         # --- C. Filter Settings ---
-        filter_widget = QWidget()
-        filter_layout = QFormLayout(filter_widget)
+        filter_page = QWidget()
+        filter_layout = QFormLayout(filter_page)
+        filter_layout.setContentsMargins(10, 15, 10, 15)
+        filter_layout.setSpacing(10)
         
         self.lp_spin = QDoubleSpinBox()
         self.lp_spin.setRange(0, 500)
-        self.lp_spin.setValue(0) # 0 means None
         self.lp_spin.setSpecialValueText("None")
-        filter_layout.addRow("LP Filter (Hz):", self.lp_spin)
+        filter_layout.addRow("Lowpass (Hz):", self.lp_spin)
         
         self.hp_spin = QDoubleSpinBox()
         self.hp_spin.setRange(0, 100)
-        self.hp_spin.setValue(0) # 0 means None
         self.hp_spin.setSpecialValueText("None")
-        filter_layout.addRow("HP Filter (Hz):", self.hp_spin)
+        filter_layout.addRow("Highpass (Hz):", self.hp_spin)
         
-        self.notch_check = QCheckBox("Notch Filter (50/60Hz)")
-        filter_layout.addRow(self.notch_check)
+        self.notch_check = QCheckBox("Notch (50/60Hz)")
+        filter_layout.addRow("", self.notch_check)
         
         btn_filter_layout = QHBoxLayout()
         apply_filter_btn = QPushButton("Apply")
+        apply_filter_btn.setObjectName("primaryButton")
         apply_filter_btn.clicked.connect(self._on_filter_change)
         btn_filter_layout.addWidget(apply_filter_btn)
         
@@ -234,53 +317,56 @@ class LeftSidebarWidget(QWidget):
         btn_filter_layout.addWidget(reset_filter_btn)
         filter_layout.addRow(btn_filter_layout)
         
-        self.toolbox.addItem(filter_widget, "Filters")
+        self.toolbox.addItem(filter_page, "Filters")
 
         # --- D. Display Settings ---
-        display_widget = QWidget()
-        display_layout = QFormLayout(display_widget)
+        display_page = QWidget()
+        display_layout = QFormLayout(display_page)
+        display_layout.setContentsMargins(10, 15, 10, 15)
+        display_layout.setSpacing(10)
         
         self.time_scale_combo = QComboBox()
         self.time_scale_combo.addItems(["5", "10", "20", "30", "60"])
         self.time_scale_combo.setCurrentText("20")
         self.time_scale_combo.currentTextChanged.connect(self._on_time_scale_change)
-        display_layout.addRow("Time Window (s):", self.time_scale_combo)
+        display_layout.addRow("Window (s):", self.time_scale_combo)
 
-        # Amplitude Slider
         self.amp_slider = QSlider(Qt.Orientation.Horizontal)
         self.amp_slider.setRange(0, len(self.amplitude_values) - 1)
-        self.amp_slider.setValue(3) # Default to 1.0 (index 3)
+        self.amp_slider.setValue(3)
         self.amp_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.amp_slider.setTickInterval(1)
         self.amp_slider.valueChanged.connect(self._on_amplitude_slider_change)
         
         self.lbl_amp_value = QLabel("1.0 µV")
+        self.lbl_amp_value.setAlignment(Qt.AlignmentFlag.AlignRight)
         display_layout.addRow("Amplitude:", self.lbl_amp_value)
         display_layout.addRow(self.amp_slider)
 
-        # Theme Toggle
         self.theme_check = QCheckBox("Dark Mode")
         self.theme_check.toggled.connect(self.on_theme_change)
         display_layout.addRow(self.theme_check)
         
-        self.toolbox.addItem(display_widget, "Display")
+        self.toolbox.addItem(display_page, "Display")
+
+    def _create_info_label(self, title, value):
+        lbl = QLabel(f"<b>{title}:</b> {value}")
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        return lbl
 
     def update_file_info(self, filename: str, duration: float, sfreq: float, n_channels: int, channel_names: List[str]):
-        """Update the file information labels and channel list."""
-        self.lbl_filename.setText(f"Filename: {filename}")
-        self.lbl_duration.setText(f"Duration: {duration:.1f} s")
-        self.lbl_sfreq.setText(f"Sampling Rate: {sfreq} Hz")
-        self.lbl_channels.setText(f"Channels: {n_channels}")
-        
+        self.lbl_filename.setText(f"<b>File:</b> {filename}")
+        self.lbl_duration.setText(f"<b>Duration:</b> {duration:.1f} s")
+        self.lbl_sfreq.setText(f"<b>Rate:</b> {sfreq} Hz")
+        self.lbl_channels.setText(f"<b>Channels:</b> {n_channels}")
         self.channel_names = channel_names
         self._populate_channel_list()
 
     def _populate_channel_list(self):
-        # Clear existing
-        for i in reversed(range(self.channel_list_layout.count())): 
-            self.channel_list_layout.itemAt(i).widget().setParent(None)
+        while self.channel_list_layout.count():
+            item = self.channel_list_layout.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
         self.channel_checkboxes = []
-        
         for i, name in enumerate(self.channel_names):
             cb = QCheckBox(f"{i+1}. {name}")
             cb.setChecked(True)
@@ -288,51 +374,34 @@ class LeftSidebarWidget(QWidget):
             self.channel_list_layout.addWidget(cb)
 
     def _select_all_channels(self):
-        for cb in self.channel_checkboxes:
-            cb.setChecked(True)
+        for cb in self.channel_checkboxes: cb.setChecked(True)
 
     def _deselect_all_channels(self):
-        for cb in self.channel_checkboxes:
-            cb.setChecked(False)
+        for cb in self.channel_checkboxes: cb.setChecked(False)
 
     def _select_standard_channels(self):
-        standard_channels = [
-            'FP1', 'FP2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2',
-            'F7', 'F8', 'T3', 'T4', 'T5', 'T6', 'FZ', 'CZ', 'PZ',
-            'T7', 'T8', 'P7', 'P8', 'FC1', 'FC2', 'CP1', 'CP2'
-        ]
-        standard_upper = [ch.upper() for ch in standard_channels]
-        
+        std = ['FP1', 'FP2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6', 'FZ', 'CZ', 'PZ', 'T7', 'T8', 'P7', 'P8', 'FC1', 'FC2', 'CP1', 'CP2']
         for i, name in enumerate(self.channel_names):
-            self.channel_checkboxes[i].setChecked(name.upper() in standard_upper)
+            self.channel_checkboxes[i].setChecked(name.upper() in std)
 
     def _apply_channel_selection(self):
-        selected_indices = [i for i, cb in enumerate(self.channel_checkboxes) if cb.isChecked()]
-        self.on_channel_selection_change(selected_indices)
+        self.on_channel_selection_change([i for i, cb in enumerate(self.channel_checkboxes) if cb.isChecked()])
 
     def _on_time_scale_change(self, value: str):
-        try:
-            self.on_time_scale_change(float(value))
-        except (ValueError, TypeError):
-            pass
+        try: self.on_time_scale_change(float(value))
+        except: pass
 
     def _on_amplitude_slider_change(self, value: int):
-        amp_val = self.amplitude_values[value]
-        self.lbl_amp_value.setText(f"{amp_val} µV")
-        self.on_amplitude_scale_change(amp_val)
+        val = self.amplitude_values[value]
+        self.lbl_amp_value.setText(f"{val} µV")
+        self.on_amplitude_scale_change(val)
 
     def _on_filter_change(self):
         lp = self.lp_spin.value()
         hp = self.hp_spin.value()
-        notch = self.notch_check.isChecked()
-        
-        lp_val = None if lp == 0 else lp
-        hp_val = None if hp == 0 else hp
-        
-        self.on_filter_change(lp_val, hp_val, notch)
+        self.on_filter_change(None if lp == 0 else lp, None if hp == 0 else hp, self.notch_check.isChecked())
 
     def reset_filters(self):
-        """Reset filter settings to default."""
         self.lp_spin.setValue(0)
         self.hp_spin.setValue(0)
         self.notch_check.setChecked(False)
@@ -351,59 +420,45 @@ class NavigationWidget(QWidget):
     def _create_widgets(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        layout.setSpacing(8)
         
-        # First / Start
-        first_btn = QPushButton()
-        first_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSkipBackward))
-        first_btn.setToolTip("First / Start")
-        first_btn.setFixedSize(36, 36)
-        first_btn.clicked.connect(lambda: self.on_navigation("first"))
-        layout.addWidget(first_btn)
+        for icon, tooltip, action in [
+            (QStyle.StandardPixmap.SP_MediaSkipBackward, "First", "first"),
+            (QStyle.StandardPixmap.SP_MediaSeekBackward, "Previous Window", "previous")
+        ]:
+            btn = QPushButton()
+            btn.setIcon(self.style().standardIcon(icon))
+            btn.setToolTip(tooltip)
+            btn.setFixedSize(32, 32)
+            btn.clicked.connect(lambda _, a=action: self.on_navigation(a))
+            layout.addWidget(btn)
         
-        # Previous Window
-        prev_btn = QPushButton()
-        prev_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
-        prev_btn.setToolTip("Previous Window")
-        prev_btn.setFixedSize(36, 36)
-        prev_btn.clicked.connect(lambda: self.on_navigation("previous"))
-        layout.addWidget(prev_btn)
-        
-        # Play / Pause
         self.play_btn = QPushButton()
         self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.play_btn.setToolTip("Play / Pause")
-        self.play_btn.setFixedSize(36, 36)
+        self.play_btn.setFixedSize(32, 32)
         self.play_btn.setCheckable(True)
         self.play_btn.clicked.connect(self._toggle_play)
         layout.addWidget(self.play_btn)
         
-        # Next Window
-        next_btn = QPushButton()
-        next_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
-        next_btn.setToolTip("Next Window")
-        next_btn.setFixedSize(36, 36)
-        next_btn.clicked.connect(lambda: self.on_navigation("next"))
-        layout.addWidget(next_btn)
-        
-        # Last / End
-        last_btn = QPushButton()
-        last_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSkipForward))
-        last_btn.setToolTip("Last / End")
-        last_btn.setFixedSize(36, 36)
-        last_btn.clicked.connect(lambda: self.on_navigation("last"))
-        layout.addWidget(last_btn)
+        for icon, tooltip, action in [
+            (QStyle.StandardPixmap.SP_MediaSeekForward, "Next Window", "next"),
+            (QStyle.StandardPixmap.SP_MediaSkipForward, "Last", "last")
+        ]:
+            btn = QPushButton()
+            btn.setIcon(self.style().standardIcon(icon))
+            btn.setToolTip(tooltip)
+            btn.setFixedSize(32, 32)
+            btn.clicked.connect(lambda _, a=action: self.on_navigation(a))
+            layout.addWidget(btn)
         
         layout.addStretch()
 
     def _toggle_play(self):
         self.is_playing = not self.is_playing
-        if self.is_playing:
-            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
-            self.on_navigation("play")
-        else:
-            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-            self.on_navigation("pause")
+        icon = QStyle.StandardPixmap.SP_MediaPause if self.is_playing else QStyle.StandardPixmap.SP_MediaPlay
+        self.play_btn.setIcon(self.style().standardIcon(icon))
+        self.on_navigation("play" if self.is_playing else "pause")
 
 
 class AnnotationPanel(QWidget):
@@ -425,33 +480,41 @@ class AnnotationPanel(QWidget):
         
         self.setMinimumWidth(280)
         self.setMaximumWidth(320)
-
         self._create_widgets()
 
     def _create_widgets(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(5, 5, 5, 5)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(12)
 
-        # --- A. Annotation Actions ---
-        action_group = QGroupBox("Actions")
-        action_layout = QVBoxLayout(action_group)
+        # Header
+        header = QLabel("Annotations")
+        header.setObjectName("panelHeader")
+        header.setStyleSheet("font-size: 14px; font-weight: bold; color: #2c3e50;")
+        layout.addWidget(header)
+
+        # A. Actions
+        action_group = QGroupBox("Add Annotation")
+        action_layout = QHBoxLayout(action_group)
+        action_layout.setContentsMargins(10, 15, 10, 10)
         
-        add_layout = QHBoxLayout()
         self.type_combo = QComboBox()
         self.type_combo.addItems(["Seizure", "Artifact", "Sleep", "Spike", "Custom"])
-        add_layout.addWidget(self.type_combo)
+        action_layout.addWidget(self.type_combo, 1)
         
         add_btn = QPushButton("Add")
+        add_btn.setObjectName("primaryButton")
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.clicked.connect(self._on_add_click)
-        add_layout.addWidget(add_btn)
-        action_layout.addLayout(add_layout)
-        
-        main_layout.addWidget(action_group)
+        action_layout.addWidget(add_btn)
+        layout.addWidget(action_group)
 
-        # --- B. Annotation List (Table) ---
-        list_group = QGroupBox("Annotation List")
-        list_layout = QVBoxLayout(list_group)
-        
+        # B. Filter & List
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("🔍 Filter annotations...")
+        self.search_input.textChanged.connect(self._filter_annotations)
+        layout.addWidget(self.search_input)
+
         self.table = QTableWidget()
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(["Label", "Start", "Dur"])
@@ -461,11 +524,14 @@ class AnnotationPanel(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
         self.table.cellDoubleClicked.connect(self.on_edit_annotation)
         self.table.itemClicked.connect(self._on_table_item_clicked)
-        
-        list_layout.addWidget(self.table)
-        
+        layout.addWidget(self.table)
+
+        # C. File Operations
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
         save_btn.clicked.connect(self.on_save_annotations)
@@ -476,65 +542,38 @@ class AnnotationPanel(QWidget):
         btn_layout.addWidget(load_btn)
         
         del_btn = QPushButton("Delete")
+        del_btn.setObjectName("dangerButton")
         del_btn.clicked.connect(self.on_delete_selected)
         btn_layout.addWidget(del_btn)
         
-        list_layout.addLayout(btn_layout)
-        main_layout.addWidget(list_group)
-
-        # --- C. Filters ---
-        filter_group = QGroupBox("Filters")
-        filter_layout = QFormLayout(filter_group)
-        
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Filter by label...")
-        self.search_input.textChanged.connect(self._filter_annotations)
-        filter_layout.addRow("Search:", self.search_input)
-        
-        main_layout.addWidget(filter_group)
+        layout.addLayout(btn_layout)
 
     def _on_add_click(self):
-        # Trigger add with currently selected type
-        # Note: Actual adding usually requires a time selection on plot
         pass
 
     def update_annotations_display(self, annotations: List[Annotation]):
         self.table.setRowCount(0)
         filter_text = self.search_input.text().lower()
-        
         row = 0
         for i, ann in enumerate(annotations):
-            if filter_text and filter_text not in ann.text.lower():
-                continue
-                
+            if filter_text and filter_text not in ann.text.lower(): continue
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(ann.text))
             self.table.setItem(row, 1, QTableWidgetItem(f"{ann.start_time:.2f}"))
             self.table.setItem(row, 2, QTableWidgetItem(f"{ann.duration:.2f}"))
-            
-            # Store the original index or object if needed
-            self.table.item(row, 0).setData(Qt.ItemDataRole.UserRole, i) 
+            self.table.item(row, 0).setData(Qt.ItemDataRole.UserRole, i)
             row += 1
 
     def get_selected_annotation_index(self) -> Optional[int]:
-        current_row = self.table.currentRow()
-        if current_row >= 0:
-            # Retrieve original index from UserRole
-            return self.table.item(current_row, 0).data(Qt.ItemDataRole.UserRole)
-        return None
+        row = self.table.currentRow()
+        return self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) if row >= 0 else None
 
     def _on_table_item_clicked(self, item):
-        row = item.row()
-        # Get original index
-        idx = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        idx = self.table.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
         self.on_jump_to_annotation(idx)
 
     def _filter_annotations(self):
-        # Triggered when search text changes
-        # We need the full list of annotations to re-filter. 
-        # For now, this is handled by the main window pushing updates.
         pass
 
     def is_annotation_mode_enabled(self) -> bool:
-        # Simplified: always enabled or controlled by toolbar
-        return True 
+        return True
