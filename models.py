@@ -93,6 +93,22 @@ class AnnotationCollection:
         self.annotations[key] = [annotation]
         return key
     
+    def remove_annotation(self, annotation_to_remove: Annotation):
+        """Remove a specific annotation object."""
+        key_to_delete = None
+        for key, ann_list in self.annotations.items():
+            if annotation_to_remove in ann_list:
+                key_to_delete = key
+                break
+        if key_to_delete:
+            del self.annotations[key_to_delete]
+
+    def get_all_annotations(self) -> List[Annotation]:
+        """Return a flat list of all annotation objects, sorted by start time."""
+        all_ann = [ann for ann_list in self.annotations.values() for ann in ann_list]
+        all_ann.sort(key=lambda x: x.start_time)
+        return all_ann
+
     def get_annotations_in_range(self, start_time: float, end_time: float) -> List[Annotation]:
         """Get all annotations that overlap with the given time range."""
         overlapping = []

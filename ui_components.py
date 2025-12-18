@@ -1,190 +1,106 @@
 """
-UI components module for channel settings and control panels.
+UI components module for channel settings and control panels, refactored for PyQt6.
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-from typing import List, Callable, Optional
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QComboBox, QDialogButtonBox, QLabel, QLineEdit,
+    QDoubleSpinBox, QFormLayout, QMessageBox, QWidget, QCheckBox, QScrollArea,
+    QPushButton, QHBoxLayout, QGroupBox, QListWidget, QListWidgetItem, QGridLayout,
+    QSplitter, QFrame, QToolBox, QTableWidget, QTableWidgetItem, QHeaderView,
+    QSlider, QStyle, QAbstractItemView
+)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QIcon
+from typing import List, Callable, Optional, Dict
 
-from EEG_Annotation_Desktop__Application.models import DisplaySettings, Annotation
+from EEG_Annotation_Desktop__Application.models import Annotation
 
 
-class AnnotationDialog(tk.Toplevel):
+class AnnotationDialog(QDialog):
     """Dialog for selecting or entering an annotation label."""
 
-    def __init__(self, parent, predefined_annotations: List[str]):
-        """
-        Initialize the annotation dialog.
-
-        Args:
-            parent: The parent window.
-            predefined_annotations: A list of common annotations to suggest.
-        """
+    def __init__(self, parent: QWidget, predefined_annotations: List[str]):
         super().__init__(parent)
-        self.parent = parent
+        self.setWindowTitle("Add Annotation")
+        self.setMinimumWidth(350)
+
         self.result: Optional[str] = None
 
-        self.title("Add Annotation")
-        self.geometry("350x130")
-        self.resizable(False, False)
+        layout = QVBoxLayout(self)
 
-        # Make window modal
-        self.transient(parent)
-        self.grab_set()
+        label = QLabel("Select or enter an annotation label:")
+        layout.addWidget(label)
 
-        self._create_widgets(predefined_annotations)
-        self._center_window()
+        self.combobox = QComboBox(self)
+        self.combobox.addItems(predefined_annotations)
+        self.combobox.setEditable(True)
+        self.combobox.setEditText("Seizure")  # Default value
+        layout.addWidget(self.combobox)
 
-        # Bind Enter/Escape keys
-        self.bind("<Return>", self._on_ok)
-        self.bind("<Escape>", self._on_cancel)
+        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
 
-        # Set focus and wait for user interaction
-        self.combobox.focus_set()
-        self.wait_window(self)
-
-    def _create_widgets(self, predefined_annotations: List[str]):
-        """Create the dialog's widgets."""
-        main_frame = ttk.Frame(self, padding="15")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(main_frame, text="Select or enter an annotation label:").pack(anchor=tk.W, pady=(0, 5))
-
-        self.combo_var = tk.StringVar()
-        self.combobox = ttk.Combobox(main_frame, textvariable=self.combo_var, values=predefined_annotations)
-        self.combobox.pack(fill=tk.X, expand=True, pady=(0, 15))
-        self.combobox.set("Seizure") # Set default value here
-
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X)
-
-        ttk.Button(button_frame, text="OK", command=self._on_ok, style="Accent.TButton").pack(side=tk.RIGHT, padx=(5, 0))
-        ttk.Button(button_frame, text="Cancel", command=self._on_cancel).pack(side=tk.RIGHT)
-
-    def _center_window(self):
-        """Center the dialog on the parent window."""
-        self.update_idletasks()
-        parent_x = self.parent.winfo_x()
-        parent_y = self.parent.winfo_y()
-        parent_w = self.parent.winfo_width()
-        parent_h = self.parent.winfo_height()
-        dialog_w = self.winfo_width()
-        dialog_h = self.winfo_height()
-        x = parent_x + (parent_w - dialog_w) // 2
-        y = parent_y + (parent_h - dialog_h) // 2
-        self.geometry(f"+{x}+{y}")
-
-    def _on_ok(self, event=None):
-        """Handle OK button click or Enter key press."""
-        self.result = self.combo_var.get().strip()
+    def accept(self):
+        """Handle OK button click."""
+        self.result = self.combobox.currentText().strip()
         if self.result:
-            self.destroy()
+            super().accept()
         else:
-            messagebox.showwarning("Input Required", "Please select or enter an annotation.", parent=self)
+            QMessageBox.warning(self, "Input Required", "Please select or enter an annotation.")
 
-    def _on_cancel(self, event=None):
-        """Handle Cancel button click or Escape key press."""
-        self.result = None
-        self.destroy()
+    def get_result(self) -> Optional[str]:
+        return self.result
 
 
-class EditAnnotationDialog(tk.Toplevel):
+class EditAnnotationDialog(QDialog):
     """Dialog for editing an annotation label and time range."""
 
-    def __init__(self, parent, annotation: Annotation, predefined_annotations: List[str]):
-        """
-        Initialize the annotation edit dialog.
-
-        Args:
-            parent: The parent window.
-            annotation: The annotation to edit.
-            predefined_annotations: A list of common annotations to suggest.
-        """
+    def __init__(self, parent: QWidget, annotation: Annotation, predefined_annotations: List[str]):
         super().__init__(parent)
-        self.parent = parent
+        self.setWindowTitle("Edit Annotation")
+        self.setMinimumWidth(350)
+
         self.result: Optional[dict] = None
         self.annotation = annotation
 
-        self.title("Edit Annotation")
-        self.geometry("350x200")
-        self.resizable(False, False)
+        layout = QFormLayout(self)
 
-        # Make window modal
-        self.transient(parent)
-        self.grab_set()
+        self.combo_var = QComboBox(self)
+        self.combo_var.addItems(predefined_annotations)
+        self.combo_var.setEditable(True)
+        self.combo_var.setCurrentText(annotation.text)
+        layout.addRow("Annotation Label:", self.combo_var)
 
-        self._create_widgets(predefined_annotations)
-        self._center_window()
+        self.start_time_spinbox = QDoubleSpinBox(self)
+        self.start_time_spinbox.setRange(0, 999999)
+        self.start_time_spinbox.setValue(annotation.start_time)
+        self.start_time_spinbox.setDecimals(2)
+        layout.addRow("Start Time (s):", self.start_time_spinbox)
 
-        # Bind Enter/Escape keys
-        self.bind("<Return>", self._on_ok)
-        self.bind("<Escape>", self._on_cancel)
+        self.end_time_spinbox = QDoubleSpinBox(self)
+        self.end_time_spinbox.setRange(0, 999999)
+        self.end_time_spinbox.setValue(annotation.end_time)
+        self.end_time_spinbox.setDecimals(2)
+        layout.addRow("End Time (s):", self.end_time_spinbox)
 
-        # Set focus and wait for user interaction
-        self.combobox.focus_set()
-        self.wait_window(self)
+        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addRow(self.button_box)
 
-    def _create_widgets(self, predefined_annotations: List[str]):
-        """Create the dialog's widgets."""
-        main_frame = ttk.Frame(self, padding="15")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Annotation label
-        ttk.Label(main_frame, text="Annotation Label:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
-        self.combo_var = tk.StringVar(value=self.annotation.text)
-        self.combobox = ttk.Combobox(main_frame, textvariable=self.combo_var, values=predefined_annotations)
-        self.combobox.grid(row=0, column=1, sticky=tk.EW, pady=(0, 5))
-
-        # Start time
-        ttk.Label(main_frame, text="Start Time (s):").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
-        self.start_time_var = tk.StringVar(value=f"{self.annotation.start_time:.2f}")
-        self.start_time_entry = ttk.Entry(main_frame, textvariable=self.start_time_var)
-        self.start_time_entry.grid(row=1, column=1, sticky=tk.EW, pady=(0, 5))
-
-        # End time
-        ttk.Label(main_frame, text="End Time (s):").grid(row=2, column=0, sticky=tk.W, pady=(0, 15))
-        self.end_time_var = tk.StringVar(value=f"{self.annotation.end_time:.2f}")
-        self.end_time_entry = ttk.Entry(main_frame, textvariable=self.end_time_var)
-        self.end_time_entry.grid(row=2, column=1, sticky=tk.EW, pady=(0, 15))
-
-        # Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=3, column=0, columnspan=2, sticky=tk.E)
-
-        ttk.Button(button_frame, text="OK", command=self._on_ok, style="Accent.TButton").pack(side=tk.RIGHT, padx=(5, 0))
-        ttk.Button(button_frame, text="Cancel", command=self._on_cancel).pack(side=tk.RIGHT)
-
-        main_frame.columnconfigure(1, weight=1)
-
-    def _center_window(self):
-        """Center the dialog on the parent window."""
-        self.update_idletasks()
-        parent_x = self.parent.winfo_x()
-        parent_y = self.parent.winfo_y()
-        parent_w = self.parent.winfo_width()
-        parent_h = self.parent.winfo_height()
-        dialog_w = self.winfo_width()
-        dialog_h = self.winfo_height()
-        x = parent_x + (parent_w - dialog_w) // 2
-        y = parent_y + (parent_h - dialog_h) // 2
-        self.geometry(f"+{x}+{y}")
-
-    def _on_ok(self, event=None):
-        """Handle OK button click or Enter key press."""
-        label = self.combo_var.get().strip()
+    def accept(self):
+        label = self.combo_var.currentText().strip()
         if not label:
-            messagebox.showwarning("Input Required", "Please enter an annotation label.", parent=self)
+            QMessageBox.warning(self, "Input Required", "Please enter an annotation label.")
             return
 
-        try:
-            start_time = float(self.start_time_var.get())
-            end_time = float(self.end_time_var.get())
-        except ValueError:
-            messagebox.showwarning("Invalid Input", "Start and end times must be numbers.", parent=self)
-            return
+        start_time = self.start_time_spinbox.value()
+        end_time = self.end_time_spinbox.value()
 
         if start_time >= end_time:
-            messagebox.showwarning("Invalid Input", "Start time must be less than end time.", parent=self)
+            QMessageBox.warning(self, "Invalid Input", "Start time must be less than end time.")
             return
 
         self.result = {
@@ -192,432 +108,433 @@ class EditAnnotationDialog(tk.Toplevel):
             "start_time": start_time,
             "end_time": end_time
         }
-        self.destroy()
+        super().accept()
 
-    def _on_cancel(self, event=None):
-        """Handle Cancel button click or Escape key press."""
-        self.result = None
-        self.destroy()
+    def get_result(self) -> Optional[dict]:
+        return self.result
 
 
-class ChannelSettingsDialog:
-    """Dialog for channel selection settings."""
+class LeftSidebarWidget(QWidget):
+    """Left sidebar with file, channel, filter, and display settings."""
 
-    def __init__(self, parent, channel_names: List[str],
-                 selected_channels: List[int],
-                 on_apply: Callable[[List[int]], None]):
-        """
-        Initialize channel settings dialog.
+    def __init__(self, on_load_file: Callable[[], None],
+                 on_channel_selection_change: Callable[[List[int]], None],
+                 on_time_scale_change: Callable[[float], None],
+                 on_amplitude_scale_change: Callable[[float], None],
+                 on_filter_change: Callable[[float, float, bool], None],
+                 on_theme_change: Callable[[bool], None]):
+        super().__init__()
+        self.on_load_file = on_load_file
+        self.on_channel_selection_change = on_channel_selection_change
+        self.on_time_scale_change = on_time_scale_change
+        self.on_amplitude_scale_change = on_amplitude_scale_change
+        self.on_filter_change = on_filter_change
+        self.on_theme_change = on_theme_change
+        
+        self.channel_names = []
+        self.channel_checkboxes = []
+        self.amplitude_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 
-        Args:
-            parent: Parent window
-            channel_names: List of all available channel names
-            selected_channels: Currently selected channel indices
-            on_apply: Callback function when apply is clicked
-        """
-        self.parent = parent
-        self.channel_names = channel_names
-        self.selected_channels = selected_channels
-        self.on_apply = on_apply
-
-        self.window = None
-        self.channel_vars = []
-
-    def show(self):
-        """Show the channel settings dialog."""
-        if not self.channel_names:
-            messagebox.showwarning("Warning", "Please load an EEG file first")
-            return
-
-        # Create channel selection window
-        self.window = tk.Toplevel(self.parent)
-        self.window.title("Channel Selection Settings")
-        self.window.geometry("420x560")
-        self.window.resizable(True, True)
-
-        # Make window modal
-        self.window.transient(self.parent)
-        self.window.grab_set()
+        self.setMinimumWidth(260)
+        self.setMaximumWidth(320)
 
         self._create_widgets()
-        self._center_window()
 
     def _create_widgets(self):
-        """Create dialog widgets."""
-        # Create main frame with scrollbar
-        main_frame = ttk.Frame(self.window)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Info label
-        info_label = ttk.Label(main_frame,
-                              text=f"Select channels to display ({len(self.channel_names)} total channels):")
-        info_label.pack(anchor=tk.W, pady=(0, 10))
+        self.toolbox = QToolBox()
+        main_layout.addWidget(self.toolbox)
 
-        # Button frame
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(0, 10))
+        # --- A. File Section ---
+        file_widget = QWidget()
+        file_layout = QVBoxLayout(file_widget)
+        
+        load_btn = QPushButton("Load EEG File")
+        load_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        load_btn.clicked.connect(lambda: self.on_load_file())
+        file_layout.addWidget(load_btn)
+        
+        # File Info Labels
+        self.lbl_filename = QLabel("Filename: -")
+        self.lbl_filename.setWordWrap(True)
+        self.lbl_duration = QLabel("Duration: -")
+        self.lbl_sfreq = QLabel("Sampling Rate: -")
+        self.lbl_channels = QLabel("Channels: -")
+        
+        info_box = QGroupBox("File Info")
+        info_layout = QVBoxLayout(info_box)
+        info_layout.addWidget(self.lbl_filename)
+        info_layout.addWidget(self.lbl_duration)
+        info_layout.addWidget(self.lbl_sfreq)
+        info_layout.addWidget(self.lbl_channels)
+        file_layout.addWidget(info_box)
+        
+        file_layout.addStretch()
+        self.toolbox.addItem(file_widget, "File")
 
-        ttk.Button(button_frame, text="Select All",
-                  command=self._select_all).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="Deselect All",
-                  command=self._deselect_all).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="Select Standard EEG",
-                  command=self._select_standard_eeg).pack(side=tk.LEFT)
+        # --- B. Channel Settings ---
+        channel_widget = QWidget()
+        channel_layout = QVBoxLayout(channel_widget)
+        
+        btn_layout = QHBoxLayout()
+        sel_all_btn = QPushButton("All")
+        sel_all_btn.clicked.connect(self._select_all_channels)
+        btn_layout.addWidget(sel_all_btn)
+        
+        sel_none_btn = QPushButton("None")
+        sel_none_btn.clicked.connect(self._deselect_all_channels)
+        btn_layout.addWidget(sel_none_btn)
+        
+        sel_std_btn = QPushButton("Standard")
+        sel_std_btn.clicked.connect(self._select_standard_channels)
+        btn_layout.addWidget(sel_std_btn)
+        channel_layout.addLayout(btn_layout)
 
-        # Create scrollable frame for channel checkboxes with reliable scrolling
-        channel_frame = ttk.Frame(main_frame)
-        channel_frame.pack(fill=tk.BOTH, expand=True)
+        self.channel_scroll = QScrollArea()
+        self.channel_scroll.setWidgetResizable(True)
+        self.channel_content = QWidget()
+        self.channel_list_layout = QVBoxLayout(self.channel_content)
+        self.channel_scroll.setWidget(self.channel_content)
+        channel_layout.addWidget(self.channel_scroll)
+        
+        apply_channels_btn = QPushButton("Apply Channel Selection")
+        apply_channels_btn.clicked.connect(self._apply_channel_selection)
+        channel_layout.addWidget(apply_channels_btn)
 
-        canvas = tk.Canvas(channel_frame, highlightthickness=0)
-        v_scroll = ttk.Scrollbar(channel_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
+        self.toolbox.addItem(channel_widget, "Channels")
 
-        # Make inner frame resize with canvas width
-        def _configure_inner(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            canvas_width = event.width
-            canvas.itemconfig(inner_window, width=canvas_width)
-        scrollable_frame.bind("<Configure>", _configure_inner)
+        # --- C. Filter Settings ---
+        filter_widget = QWidget()
+        filter_layout = QFormLayout(filter_widget)
+        
+        self.lp_spin = QDoubleSpinBox()
+        self.lp_spin.setRange(0, 500)
+        self.lp_spin.setValue(0) # 0 means None
+        self.lp_spin.setSpecialValueText("None")
+        filter_layout.addRow("LP Filter (Hz):", self.lp_spin)
+        
+        self.hp_spin = QDoubleSpinBox()
+        self.hp_spin.setRange(0, 100)
+        self.hp_spin.setValue(0) # 0 means None
+        self.hp_spin.setSpecialValueText("None")
+        filter_layout.addRow("HP Filter (Hz):", self.hp_spin)
+        
+        self.notch_check = QCheckBox("Notch Filter (50/60Hz)")
+        filter_layout.addRow(self.notch_check)
+        
+        btn_filter_layout = QHBoxLayout()
+        apply_filter_btn = QPushButton("Apply")
+        apply_filter_btn.clicked.connect(self._on_filter_change)
+        btn_filter_layout.addWidget(apply_filter_btn)
+        
+        reset_filter_btn = QPushButton("Reset")
+        reset_filter_btn.clicked.connect(self.reset_filters)
+        btn_filter_layout.addWidget(reset_filter_btn)
+        filter_layout.addRow(btn_filter_layout)
+        
+        self.toolbox.addItem(filter_widget, "Filters")
 
-        inner_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=v_scroll.set)
+        # --- D. Display Settings ---
+        display_widget = QWidget()
+        display_layout = QFormLayout(display_widget)
+        
+        self.time_scale_combo = QComboBox()
+        self.time_scale_combo.addItems(["5", "10", "20", "30", "60"])
+        self.time_scale_combo.setCurrentText("20")
+        self.time_scale_combo.currentTextChanged.connect(self._on_time_scale_change)
+        display_layout.addRow("Time Window (s):", self.time_scale_combo)
 
-        canvas.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
+        # Amplitude Slider
+        self.amp_slider = QSlider(Qt.Orientation.Horizontal)
+        self.amp_slider.setRange(0, len(self.amplitude_values) - 1)
+        self.amp_slider.setValue(3) # Default to 1.0 (index 3)
+        self.amp_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.amp_slider.setTickInterval(1)
+        self.amp_slider.valueChanged.connect(self._on_amplitude_slider_change)
+        
+        self.lbl_amp_value = QLabel("1.0 µV")
+        display_layout.addRow("Amplitude:", self.lbl_amp_value)
+        display_layout.addRow(self.amp_slider)
 
-        # Create channel variables and checkboxes
-        self.channel_vars = []
-        for i, channel_name in enumerate(self.channel_names):
-            var = tk.BooleanVar()
-            var.set(i in self.selected_channels if self.selected_channels else True)
-            self.channel_vars.append(var)
+        # Theme Toggle
+        self.theme_check = QCheckBox("Dark Mode")
+        self.theme_check.toggled.connect(self.on_theme_change)
+        display_layout.addRow(self.theme_check)
+        
+        self.toolbox.addItem(display_widget, "Display")
 
-            checkbox = ttk.Checkbutton(scrollable_frame, text=f"{i + 1:2d}. {channel_name}",
-                                       variable=var)
-            checkbox.pack(fill=tk.X, anchor=tk.W, padx=5, pady=2)
+    def update_file_info(self, filename: str, duration: float, sfreq: float, n_channels: int, channel_names: List[str]):
+        """Update the file information labels and channel list."""
+        self.lbl_filename.setText(f"Filename: {filename}")
+        self.lbl_duration.setText(f"Duration: {duration:.1f} s")
+        self.lbl_sfreq.setText(f"Sampling Rate: {sfreq} Hz")
+        self.lbl_channels.setText(f"Channels: {n_channels}")
+        
+        self.channel_names = channel_names
+        self._populate_channel_list()
 
-        # Mouse wheel scrolling (Windows/Mac/Linux)
-        def _on_mousewheel(event):
-            delta = 0
-            if event.num == 4:  # Linux scroll up
-                delta = -1
-            elif event.num == 5:  # Linux scroll down
-                delta = 1
-            else:
-                delta = -1 * int(event.delta / 120)  # Windows/Mac
-            canvas.yview_scroll(delta, "units")
+    def _populate_channel_list(self):
+        # Clear existing
+        for i in reversed(range(self.channel_list_layout.count())): 
+            self.channel_list_layout.itemAt(i).widget().setParent(None)
+        self.channel_checkboxes = []
+        
+        for i, name in enumerate(self.channel_names):
+            cb = QCheckBox(f"{i+1}. {name}")
+            cb.setChecked(True)
+            self.channel_checkboxes.append(cb)
+            self.channel_list_layout.addWidget(cb)
 
-        canvas.bind("<MouseWheel>", _on_mousewheel)
-        canvas.bind("<Button-4>", _on_mousewheel)
-        canvas.bind("<Button-5>", _on_mousewheel)
+    def _select_all_channels(self):
+        for cb in self.channel_checkboxes:
+            cb.setChecked(True)
 
-        # OK and Cancel buttons
-        button_frame2 = ttk.Frame(main_frame)
-        button_frame2.pack(fill=tk.X, pady=(15, 0))
+    def _deselect_all_channels(self):
+        for cb in self.channel_checkboxes:
+            cb.setChecked(False)
 
-        ttk.Button(button_frame2, text="Apply",
-                  command=self._apply_selection).pack(side=tk.RIGHT, padx=(5, 0))
-        ttk.Button(button_frame2, text="Cancel",
-                  command=self._cancel).pack(side=tk.RIGHT)
-
-    def _center_window(self):
-        """Center the window on screen."""
-        self.window.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (self.window.winfo_width() // 2)
-        y = (self.window.winfo_screenheight() // 2) - (self.window.winfo_height() // 2)
-        self.window.geometry(f"+{x}+{y}")
-
-    def _select_all(self):
-        """Select all channels."""
-        for var in self.channel_vars:
-            var.set(True)
-
-    def _deselect_all(self):
-        """Deselect all channels."""
-        for var in self.channel_vars:
-            var.set(False)
-
-    def _select_standard_eeg(self):
-        """Select standard EEG channels (10-20 system)."""
+    def _select_standard_channels(self):
         standard_channels = [
             'FP1', 'FP2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2',
             'F7', 'F8', 'T3', 'T4', 'T5', 'T6', 'FZ', 'CZ', 'PZ',
             'T7', 'T8', 'P7', 'P8', 'FC1', 'FC2', 'CP1', 'CP2'
         ]
+        standard_upper = [ch.upper() for ch in standard_channels]
+        
+        for i, name in enumerate(self.channel_names):
+            self.channel_checkboxes[i].setChecked(name.upper() in standard_upper)
 
-        self._deselect_all()
-        for i, channel_name in enumerate(self.channel_names):
-            if channel_name.upper() in [ch.upper() for ch in standard_channels]:
-                self.channel_vars[i].set(True)
+    def _apply_channel_selection(self):
+        selected_indices = [i for i, cb in enumerate(self.channel_checkboxes) if cb.isChecked()]
+        self.on_channel_selection_change(selected_indices)
 
-    def _apply_selection(self):
-        """Apply the selected channels."""
-        new_selected_channels = []
-        for i, var in enumerate(self.channel_vars):
-            if var.get():
-                new_selected_channels.append(i)
+    def _on_time_scale_change(self, value: str):
+        try:
+            self.on_time_scale_change(float(value))
+        except (ValueError, TypeError):
+            pass
 
-        if not new_selected_channels:
-            messagebox.showwarning("Warning", "Please select at least one channel")
-            return
+    def _on_amplitude_slider_change(self, value: int):
+        amp_val = self.amplitude_values[value]
+        self.lbl_amp_value.setText(f"{amp_val} µV")
+        self.on_amplitude_scale_change(amp_val)
 
-        self.on_apply(new_selected_channels)
-        self.window.destroy()
+    def _on_filter_change(self):
+        lp = self.lp_spin.value()
+        hp = self.hp_spin.value()
+        notch = self.notch_check.isChecked()
+        
+        lp_val = None if lp == 0 else lp
+        hp_val = None if hp == 0 else hp
+        
+        self.on_filter_change(lp_val, hp_val, notch)
 
-    def _cancel(self):
-        """Cancel channel selection."""
-        self.window.destroy()
+    def reset_filters(self):
+        """Reset filter settings to default."""
+        self.lp_spin.setValue(0)
+        self.hp_spin.setValue(0)
+        self.notch_check.setChecked(False)
+        self.on_filter_change(None, None, False)
 
 
-class ControlPanel:
-    """Control panel with display settings and navigation controls."""
+class NavigationWidget(QWidget):
+    """Navigation controls widget."""
 
-    def __init__(self, parent, on_time_scale_change: Callable[[float], None],
-                 on_amplitude_scale_change: Callable[[float], None],
-                 on_filter_change: Callable[[float, float], None],
-                 on_navigation: Callable[[str], None],
-                 on_channel_settings: Callable[[], None],
-                 on_load_file: Callable[[], None] = None):
-        """
-        Initialize control panel.
-        """
-        self.parent = parent
-        self.on_time_scale_change = on_time_scale_change
-        self.on_amplitude_scale_change = on_amplitude_scale_change
-        self.on_filter_change = on_filter_change
+    def __init__(self, on_navigation: Callable[[str], None]):
+        super().__init__()
         self.on_navigation = on_navigation
-        self.on_channel_settings = on_channel_settings
-        self.on_load_file = on_load_file
-
+        self.is_playing = False
         self._create_widgets()
 
     def _create_widgets(self):
-        """Create control panel widgets."""
-        control_frame = ttk.Frame(self.parent)
-        control_frame.pack(fill=tk.X, pady=(0, 10))
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        
+        # First / Start
+        first_btn = QPushButton()
+        first_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSkipBackward))
+        first_btn.setToolTip("First / Start")
+        first_btn.setFixedSize(36, 36)
+        first_btn.clicked.connect(lambda: self.on_navigation("first"))
+        layout.addWidget(first_btn)
+        
+        # Previous Window
+        prev_btn = QPushButton()
+        prev_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
+        prev_btn.setToolTip("Previous Window")
+        prev_btn.setFixedSize(36, 36)
+        prev_btn.clicked.connect(lambda: self.on_navigation("previous"))
+        layout.addWidget(prev_btn)
+        
+        # Play / Pause
+        self.play_btn = QPushButton()
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.play_btn.setToolTip("Play / Pause")
+        self.play_btn.setFixedSize(36, 36)
+        self.play_btn.setCheckable(True)
+        self.play_btn.clicked.connect(self._toggle_play)
+        layout.addWidget(self.play_btn)
+        
+        # Next Window
+        next_btn = QPushButton()
+        next_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
+        next_btn.setToolTip("Next Window")
+        next_btn.setFixedSize(36, 36)
+        next_btn.clicked.connect(lambda: self.on_navigation("next"))
+        layout.addWidget(next_btn)
+        
+        # Last / End
+        last_btn = QPushButton()
+        last_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSkipForward))
+        last_btn.setToolTip("Last / End")
+        last_btn.setFixedSize(36, 36)
+        last_btn.clicked.connect(lambda: self.on_navigation("last"))
+        layout.addWidget(last_btn)
+        
+        layout.addStretch()
 
-        # --- Group file and channel buttons ---
-        file_frame = ttk.Frame(control_frame)
-        file_frame.pack(side=tk.LEFT, padx=(0, 10), fill='y')
-        ttk.Button(file_frame, text="Load EEG File",
-                  command=self._on_load_file).pack(pady=(0, 2), fill='x')
-        ttk.Button(file_frame, text="Channel Settings",
-                  command=self.on_channel_settings).pack(pady=(2, 0), fill='x')
-
-        # --- Display settings ---
-        scale_frame = ttk.LabelFrame(control_frame, text="Display Settings")
-        scale_frame.pack(side=tk.LEFT, padx=(0, 10), fill='y')
-
-        # Time scale
-        ttk.Label(scale_frame, text="Time Scale (s):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
-        self.time_scale_var = tk.StringVar(value="20")
-        time_scale_combo = ttk.Combobox(scale_frame, textvariable=self.time_scale_var,
-                                       values=["5", "10", "20", "30", "60"], width=8)
-        time_scale_combo.grid(row=0, column=1, padx=5, pady=2)
-        time_scale_combo.bind('<<ComboboxSelected>>', self._on_time_scale_change)
-
-        # Amplitude scale
-        ttk.Label(scale_frame, text="Amplitude:").grid(row=0, column=2, sticky=tk.W, padx=(10, 5), pady=2)
-        self.amplitude_scale_var = tk.StringVar(value="1.0")
-        amplitude_scale_combo = ttk.Combobox(scale_frame, textvariable=self.amplitude_scale_var,
-                                           values=["0.1", "0.2", "0.5", "1.0", "2.0", "5.0", "10.0", "20.0", "50.0"],
-                                           width=8)
-        amplitude_scale_combo.grid(row=0, column=3, padx=5, pady=2)
-        amplitude_scale_combo.bind('<<ComboboxSelected>>', self._on_amplitude_scale_change)
-
-        # Filter controls
-        ttk.Label(scale_frame, text="LP Filter (Hz):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
-        self.lowpass_var = tk.StringVar(value="None")
-        lowpass_combo = ttk.Combobox(scale_frame, textvariable=self.lowpass_var,
-                                     values=["None", "30", "50", "70", "100"], width=8)
-        lowpass_combo.grid(row=1, column=1, padx=5, pady=2)
-        lowpass_combo.bind('<<ComboboxSelected>>', self._on_filter_change)
-
-        ttk.Label(scale_frame, text="HP Filter (Hz):").grid(row=1, column=2, sticky=tk.W, padx=(10, 5), pady=2)
-        self.highpass_var = tk.StringVar(value="None")
-        highpass_combo = ttk.Combobox(scale_frame, textvariable=self.highpass_var,
-                                     values=["None", "0.1", "0.5", "1.0", "5.0"], width=8)
-        highpass_combo.grid(row=1, column=3, padx=5, pady=2)
-        highpass_combo.bind('<<ComboboxSelected>>', self._on_filter_change)
-
-        # --- Navigation ---
-        nav_frame = ttk.LabelFrame(control_frame, text="Navigation")
-        nav_frame.pack(side=tk.LEFT, padx=(0, 10), fill='y')
-
-        ttk.Button(nav_frame, text="<<", command=lambda: self.on_navigation("jump_backward"), width=4).pack(side=tk.LEFT, padx=2, pady=5)
-        ttk.Button(nav_frame, text="<", command=lambda: self.on_navigation("previous"), width=4).pack(side=tk.LEFT, padx=2, pady=5)
-        ttk.Button(nav_frame, text=">", command=lambda: self.on_navigation("next"), width=4).pack(side=tk.LEFT, padx=2, pady=5)
-        ttk.Button(nav_frame, text=">>", command=lambda: self.on_navigation("jump_forward"), width=4).pack(side=tk.LEFT, padx=2, pady=5)
-
-        # --- Window Info ---
-        info_frame = ttk.Frame(control_frame)
-        info_frame.pack(side=tk.LEFT, padx=(0, 10), fill='y', expand=True)
-        self.window_info_label = ttk.Label(info_frame, text="No file loaded", anchor='center')
-        self.window_info_label.pack(padx=5, pady=5, expand=True, fill='both')
-
-    def _on_load_file(self):
-        """Handle load file button click."""
-        if self.on_load_file:
-            self.on_load_file()
-
-    def _on_time_scale_change(self, event=None):
-        """Handle time scale change."""
-        try:
-            new_time_scale = float(self.time_scale_var.get())
-            self.on_time_scale_change(new_time_scale)
-        except ValueError:
-            pass
-
-    def _on_amplitude_scale_change(self, event=None):
-        """Handle amplitude scale change."""
-        try:
-            new_amplitude_scale = float(self.amplitude_scale_var.get())
-            self.on_amplitude_scale_change(new_amplitude_scale)
-        except ValueError:
-            pass
-
-    def _on_filter_change(self, event=None):
-        """Handle filter setting changes."""
-        try:
-            lp_value = self.lowpass_var.get()
-            lowpass = None if lp_value == "None" else float(lp_value)
-
-            hp_value = self.highpass_var.get()
-            highpass = None if hp_value == "None" else float(hp_value)
-
-            self.on_filter_change(lowpass, highpass)
-        except ValueError:
-            pass
-
-    def update_window_info(self, current_window: int, total_windows: int,
-                          window_start: float, window_end: float):
-        """Update window information label."""
-        self.window_info_label.config(
-            text=f"Window {current_window}/{total_windows}\n"
-                 f"({window_start:.1f}s - {window_end:.1f}s)"
-        )
-
-    def get_display_settings(self) -> DisplaySettings:
-        """Get current display settings."""
-        time_scale = float(self.time_scale_var.get())
-        amplitude_scale = float(self.amplitude_scale_var.get())
-
-        lowpass = None
-        if self.lowpass_var.get() != "None":
-            lowpass = float(self.lowpass_var.get())
-
-        highpass = None
-        if self.highpass_var.get() != "None":
-            highpass = float(self.highpass_var.get())
-
-        return DisplaySettings(
-            time_scale=time_scale,
-            amplitude_scale=amplitude_scale,
-            lowpass_filter=lowpass,
-            highpass_filter=highpass
-        )
+    def _toggle_play(self):
+        self.is_playing = not self.is_playing
+        if self.is_playing:
+            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+            self.on_navigation("play")
+        else:
+            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            self.on_navigation("pause")
 
 
-class AnnotationPanel:
+class AnnotationPanel(QWidget):
     """Panel for annotation controls and display."""
 
-    def __init__(self, parent, on_add_annotation: Callable[[str], None],
+    def __init__(self, on_add_annotation: Callable[[str], None],
                  on_delete_selected: Callable[[], None],
                  on_save_annotations: Callable[[], None],
                  on_load_annotations: Callable[[], None],
-                 on_edit_annotation: Callable[[], None]):
-        """
-        Initialize annotation panel.
-        """
-        self.parent = parent
+                 on_edit_annotation: Callable[[], None],
+                 on_jump_to_annotation: Callable[[int], None]):
+        super().__init__()
         self.on_add_annotation = on_add_annotation
         self.on_delete_selected = on_delete_selected
         self.on_save_annotations = on_save_annotations
         self.on_load_annotations = on_load_annotations
         self.on_edit_annotation = on_edit_annotation
-
-        self.annotation_listbox = None
+        self.on_jump_to_annotation = on_jump_to_annotation
+        
+        self.setMinimumWidth(280)
+        self.setMaximumWidth(320)
 
         self._create_widgets()
 
     def _create_widgets(self):
-        """Create annotation panel widgets."""
-        # --- Main Annotation Frame ---
-        main_frame = ttk.LabelFrame(self.parent, text="Annotations")
-        main_frame.pack(fill=tk.X, pady=(0, 10))
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
 
-        # --- Top row: Mode, Entry, Add button ---
-        top_frame = ttk.Frame(main_frame)
-        top_frame.pack(fill=tk.X, padx=5, pady=5)
+        # --- A. Annotation Actions ---
+        action_group = QGroupBox("Actions")
+        action_layout = QVBoxLayout(action_group)
+        
+        add_layout = QHBoxLayout()
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["Seizure", "Artifact", "Sleep", "Spike", "Custom"])
+        add_layout.addWidget(self.type_combo)
+        
+        add_btn = QPushButton("Add")
+        add_btn.clicked.connect(self._on_add_click)
+        add_layout.addWidget(add_btn)
+        action_layout.addLayout(add_layout)
+        
+        main_layout.addWidget(action_group)
 
-        self.annotation_mode_var = tk.BooleanVar()
-        self.annotation_mode_checkbox = ttk.Checkbutton(top_frame, text="Enable Selection",
-                                                      variable=self.annotation_mode_var)
-        self.annotation_mode_checkbox.pack(side=tk.LEFT, padx=(0, 10))
+        # --- B. Annotation List (Table) ---
+        list_group = QGroupBox("Annotation List")
+        list_layout = QVBoxLayout(list_group)
+        
+        self.table = QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Label", "Start", "Dur"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.cellDoubleClicked.connect(self.on_edit_annotation)
+        self.table.itemClicked.connect(self._on_table_item_clicked)
+        
+        list_layout.addWidget(self.table)
+        
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.on_save_annotations)
+        btn_layout.addWidget(save_btn)
+        
+        load_btn = QPushButton("Load")
+        load_btn.clicked.connect(self.on_load_annotations)
+        btn_layout.addWidget(load_btn)
+        
+        del_btn = QPushButton("Delete")
+        del_btn.clicked.connect(self.on_delete_selected)
+        btn_layout.addWidget(del_btn)
+        
+        list_layout.addLayout(btn_layout)
+        main_layout.addWidget(list_group)
 
-        # This section is now deprecated by the new dialog workflow, but kept for layout
-        ttk.Label(top_frame, text="Annotation Text:").pack(side=tk.LEFT, padx=(0, 5))
-        self.annotation_entry = ttk.Entry(top_frame, state='disabled') # Disabled
-        self.annotation_entry.pack(side=tk.LEFT, padx=(0, 5), fill='x', expand=True)
+        # --- C. Filters ---
+        filter_group = QGroupBox("Filters")
+        filter_layout = QFormLayout(filter_group)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Filter by label...")
+        self.search_input.textChanged.connect(self._filter_annotations)
+        filter_layout.addRow("Search:", self.search_input)
+        
+        main_layout.addWidget(filter_group)
 
-        ttk.Button(top_frame, text="Add Annotation",
-                  command=self._on_add_annotation, state='disabled').pack(side=tk.LEFT, padx=(0, 5)) # Disabled
-
-        # --- Middle row: Selection info and clear button ---
-        middle_frame = ttk.Frame(main_frame)
-        middle_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
-
-        self.selection_info_label = ttk.Label(middle_frame, text="Selection: None")
-        self.selection_info_label.pack(side=tk.LEFT, padx=(0, 10), fill='x', expand=True)
-
-        # --- Bottom row: File operations ---
-        bottom_frame = ttk.Frame(main_frame)
-        bottom_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
-
-        ttk.Button(bottom_frame, text="Save Annotations",
-                  command=self.on_save_annotations).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(bottom_frame, text="Load Annotations",
-                  command=self.on_load_annotations).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(bottom_frame, text="Delete Selected",
-                  command=self.on_delete_selected).pack(side=tk.LEFT)
-
-        # --- Current annotations display ---
-        display_frame = ttk.Frame(self.parent)
-        display_frame.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(display_frame, text="Annotations in Current Window:").pack(anchor=tk.W)
-        self.annotation_listbox = tk.Listbox(display_frame, height=4, relief='solid', borderwidth=1)
-        self.annotation_listbox.pack(fill=tk.X, pady=(2,0))
-        self.annotation_listbox.bind("<Double-1>", self.on_edit_annotation)
-
-    def _on_add_annotation(self):
-        """Handle add annotation button click."""
-        # This is now handled by the dialog, but we can leave the hook here.
-        messagebox.showinfo("Info", "To add an annotation, enable selection and drag on the plot.", parent=self.parent)
-
-    def update_selection_info(self, start_time: Optional[float], end_time: Optional[float]):
-        """Update the selection information label."""
-        if start_time is not None and end_time is not None:
-            duration = abs(end_time - start_time)
-            self.selection_info_label.config(
-                text=f"Selection: {start_time:.2f}s - {end_time:.2f}s (Duration: {duration:.2f}s)"
-            )
-        else:
-            self.selection_info_label.config(text="Selection: None")
+    def _on_add_click(self):
+        # Trigger add with currently selected type
+        # Note: Actual adding usually requires a time selection on plot
+        pass
 
     def update_annotations_display(self, annotations: List[Annotation]):
-        """Update the current annotations display."""
-        self.annotation_listbox.delete(0, tk.END)
-        for i, annotation in enumerate(annotations):
-            self.annotation_listbox.insert(tk.END, f"{i+1}. {annotation.text} ({annotation.start_time:.2f}s - {annotation.end_time:.2f}s)")
+        self.table.setRowCount(0)
+        filter_text = self.search_input.text().lower()
+        
+        row = 0
+        for i, ann in enumerate(annotations):
+            if filter_text and filter_text not in ann.text.lower():
+                continue
+                
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(ann.text))
+            self.table.setItem(row, 1, QTableWidgetItem(f"{ann.start_time:.2f}"))
+            self.table.setItem(row, 2, QTableWidgetItem(f"{ann.duration:.2f}"))
+            
+            # Store the original index or object if needed
+            self.table.item(row, 0).setData(Qt.ItemDataRole.UserRole, i) 
+            row += 1
 
     def get_selected_annotation_index(self) -> Optional[int]:
-        """Get the index of the selected annotation in the listbox."""
-        selection = self.annotation_listbox.curselection()
-        if selection:
-            return selection[0]
+        current_row = self.table.currentRow()
+        if current_row >= 0:
+            # Retrieve original index from UserRole
+            return self.table.item(current_row, 0).data(Qt.ItemDataRole.UserRole)
         return None
 
+    def _on_table_item_clicked(self, item):
+        row = item.row()
+        # Get original index
+        idx = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        self.on_jump_to_annotation(idx)
+
+    def _filter_annotations(self):
+        # Triggered when search text changes
+        # We need the full list of annotations to re-filter. 
+        # For now, this is handled by the main window pushing updates.
+        pass
+
     def is_annotation_mode_enabled(self) -> bool:
-        """Check if annotation mode is enabled."""
-        return self.annotation_mode_var.get()
+        # Simplified: always enabled or controlled by toolbar
+        return True 

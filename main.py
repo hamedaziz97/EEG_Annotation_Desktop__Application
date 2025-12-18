@@ -2,15 +2,17 @@
 Main entry point for the EEG Dashboard application.
 """
 
-import tkinter as tk
+import sys
+from PyQt6.QtWidgets import QApplication
 from EEG_Annotation_Desktop__Application.main_dashboard import EEGDashboard
 
 
 def main():
     """Main function to run the EEG dashboard."""
-    root = tk.Tk()
-    app = EEGDashboard(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    window = EEGDashboard()
+    window.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

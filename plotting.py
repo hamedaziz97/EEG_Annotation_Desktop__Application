@@ -1,44 +1,40 @@
 """
-Plotting and visualization module for EEG data display.
+Plotting and visualization module for EEG data display, refactored for PyQt6.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from typing import List, Optional, Tuple
-from EEG_Annotation_Desktop__Application.file_handlers import FilterHandler
 
+from EEG_Annotation_Desktop__Application.file_handlers import FilterHandler
 from EEG_Annotation_Desktop__Application.models import EEGData, DisplaySettings, SelectionState, Annotation
 
 
-class EEGPlotter:
+class EEGPlotter(QWidget):
     """Handles EEG data plotting and visualization."""
     
-    def __init__(self, parent_widget):
-        """
-        Initialize the plotter.
-        
-        Args:
-            parent_widget: Parent tkinter widget to embed the plot
-        """
-        self.parent_widget = parent_widget
+    def __init__(self, parent: QWidget = None):
+        """Initialize the plotter."""
+        super().__init__(parent)
         self.selected_annotation_channels = set()
         self.display_settings = None
         self.eeg_data = None
         self.channel_spacing = 0
 
-        # Create figure WITHOUT constrained_layout
         self.figure = Figure(figsize=(16, 12), dpi=100)
-        self.canvas = FigureCanvasTkAgg(self.figure, parent_widget)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.canvas)
 
-        # Connect mouse events
         self.canvas.mpl_connect('button_press_event', self._on_mouse_press)
         self.canvas.mpl_connect('button_release_event', self._on_mouse_release)
         self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
 
-        # Callbacks for mouse events
         self.mouse_press_callback = None
         self.mouse_release_callback = None
         self.mouse_move_callback = None
@@ -103,9 +99,7 @@ class EEGPlotter:
                       current_window_start: float,
                       selection_state: SelectionState,
                       annotations: List[Annotation] = None) -> None:
-        """
-        Plot EEG data for the current window.
-        """
+        """Plot EEG data for the current window."""
         if eeg_data is None:
             return
 
@@ -133,7 +127,7 @@ class EEGPlotter:
             )
 
         num_window_samples = window_data.shape[1]
-        canvas_width = self.canvas.get_tk_widget().winfo_width() or 1500
+        canvas_width = self.canvas.width() or 1500
         max_points = max(800, int(canvas_width) - 50)
         decim = max(1, num_window_samples // max_points)
         if decim > 1:
@@ -145,18 +139,15 @@ class EEGPlotter:
             window_data.shape[1]
         )
 
-        self.channel_spacing = self._calculate_channel_spacing(
-            window_data, display_settings.amplitude_scale
-        )
+        self.channel_spacing = self._calculate_channel_spacing(window_data)
 
         ax = self.figure.add_subplot(111)
         ax.set_position([0.08, 0.07, 0.90, 0.88])
         ax.margins(x=0.002)
 
-        self._plot_channels(ax, time_axis, window_data, selected_names,
-                            self.channel_spacing, display_settings.amplitude_scale)
+        self._plot_channels(ax, time_axis, window_data, selected_names, self.channel_spacing)
 
-        self._customize_plot(ax, time_axis, window_data, selected_names, display_settings,
+        self._customize_plot(ax, time_axis, selected_names, display_settings,
                              current_window_start, eeg_data.channel_names)
 
         if annotations:
@@ -179,29 +170,25 @@ class EEGPlotter:
         selected_names = [eeg_data.channel_names[i] for i in selected_channels]
         return selected_data, selected_names
     
-    def _calculate_channel_spacing(self, window_data: np.ndarray, 
-                                 amplitude_scale: float) -> float:
+    def _calculate_channel_spacing(self, window_data: np.ndarray) -> float:
         if window_data.size == 0:
             return 1.0
         channel_stds = np.std(window_data, axis=1)
         median_std = np.median(channel_stds[channel_stds > 0])
         if median_std == 0 or np.isnan(median_std):
-            median_std = 1e-5
-        base_channel_spacing = median_std * 6
-        scaled_channel_spacing = base_channel_spacing / amplitude_scale
-        return max(1e-5, scaled_channel_spacing)
+            median_std = 1e-5 # Fallback for flat signals
+        return median_std * 15 # Base spacing
     
     def _plot_channels(self, ax, time_axis: np.ndarray, window_data: np.ndarray,
-                      channel_names: List[str], channel_spacing: float, 
-                      amplitude_scale: float) -> None:
+                      channel_names: List[str], channel_spacing: float) -> None:
         num_channels = len(channel_names)
 
         for i in range(num_channels):
             y_offset = (num_channels - 1 - i) * channel_spacing
             color = 'red' if channel_names[i] in self.selected_annotation_channels else 'b'
-            ax.plot(time_axis, window_data[i] * amplitude_scale + y_offset, color=color, linewidth=0.7)
+            ax.plot(time_axis, window_data[i] + y_offset, color=color, linewidth=0.7)
 
-    def _customize_plot(self, ax, time_axis: np.ndarray, window_data: np.ndarray,
+    def _customize_plot(self, ax, time_axis: np.ndarray,
                        channel_names: List[str], display_settings: DisplaySettings, 
                        current_window_start: float, all_channel_names: List[str]) -> None:
         channel_info = (f" ({len(channel_names)}/{len(all_channel_names)} channels)" 
@@ -227,8 +214,26 @@ class EEGPlotter:
         ax.set_xlim(time_axis[0] - time_margin, time_axis[-1] + time_margin) if time_axis.size > 0 else None
         
         num_channels = len(channel_names)
-        y_margin = self.channel_spacing * 0.5
-        ax.set_ylim(-y_margin, num_channels * self.channel_spacing - y_margin)
+        
+        # Calculate geometric center of the channel baselines
+        # Bottom channel is at 0, top channel is at (num_channels - 1) * spacing
+        geometric_center = (num_channels - 1) * self.channel_spacing / 2.0
+        
+        # Calculate view height with margins
+        # We want to see from -0.5*spacing to (num_channels - 0.5)*spacing
+        # Total height = num_channels * spacing
+        # Apply zoom factor
+        zoom_factor = 1.0 / display_settings.amplitude_scale
+        view_height = num_channels * self.channel_spacing * zoom_factor
+        
+        # Ensure a minimum view height to avoid errors
+        if view_height <= 0:
+            view_height = self.channel_spacing
+            
+        ax.set_ylim(
+            geometric_center - view_height / 2.0,
+            geometric_center + view_height / 2.0
+        )
 
         y_positions = [(num_channels - 1 - i) * self.channel_spacing for i in range(num_channels)]
         ax.set_yticks(y_positions)
