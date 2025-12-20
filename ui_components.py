@@ -8,9 +8,9 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QFormLayout, QMessageBox, QWidget, QCheckBox, QScrollArea,
     QPushButton, QHBoxLayout, QGroupBox, QListWidget, QListWidgetItem, QGridLayout,
     QSplitter, QFrame, QToolBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QSlider, QStyle, QAbstractItemView, QSizePolicy, QSpacerItem
+    QSlider, QStyle, QAbstractItemView, QSizePolicy, QSpacerItem, QToolButton
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QParallelAnimationGroup, QPropertyAnimation, QAbstractAnimation
 from PyQt6.QtGui import QIcon
 from typing import List, Callable, Optional, Dict
 
@@ -103,8 +103,8 @@ class EditAnnotationDialog(QDialog):
         start_time = self.start_time_spinbox.value()
         end_time = self.end_time_spinbox.value()
 
-        if start_time >= end_time:
-            QMessageBox.warning(self, "Invalid Input", "Start time must be less than end time.")
+        if start_time > end_time:
+            QMessageBox.warning(self, "Invalid Input", "Start time must be less than or equal to end time.")
             return
 
         self.result = {
@@ -118,77 +118,48 @@ class EditAnnotationDialog(QDialog):
         return self.result
 
 
-class ChannelSettingsDialog(QDialog):
-    """Dialog for channel selection settings."""
-    # Kept for compatibility if needed, though LeftSidebarWidget now handles this inline.
-    def __init__(self, parent: QWidget, channel_names: List[str],
-                 selected_channels: List[int],
-                 on_apply: Callable[[List[int]], None]):
+class CollapsibleBox(QWidget):
+    """A custom collapsible box widget."""
+    def __init__(self, title="", parent=None):
         super().__init__(parent)
-        self.channel_names = channel_names
-        self.selected_channels = selected_channels
-        self.on_apply = on_apply
-        self.setWindowTitle("Channel Selection")
-        self.setGeometry(0, 0, 400, 600)
-        self.channel_checkboxes: List[QCheckBox] = []
-        self._create_widgets()
-        self._center_window()
+        self.toggle_button = QToolButton(text=title, checkable=True, checked=False)
+        self.toggle_button.setStyleSheet("QToolButton { border: none; font-weight: bold; text-align: left; padding: 5px; background-color: #f8f9fa; border-radius: 4px; } QToolButton:hover { background-color: #e9ecef; }")
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle_button.setArrowType(Qt.ArrowType.RightArrow)
+        self.toggle_button.pressed.connect(self.on_pressed)
 
-    def _create_widgets(self):
-        layout = QVBoxLayout(self)
+        self.content_area = QWidget()
+        self.content_area.setMaximumHeight(0)
+        self.content_area.setMinimumHeight(0)
         
-        info = QLabel(f"Select channels ({len(self.channel_names)} total):")
-        layout.addWidget(info)
+        self.animation = QParallelAnimationGroup()
+        self.anim = QPropertyAnimation(self.content_area, b"maximumHeight")
+        self.anim.setDuration(300)
+        self.anim.setStartValue(0)
+        self.animation.addAnimation(self.anim)
 
-        btn_layout = QHBoxLayout()
-        for text, slot in [("All", self._select_all), ("None", self._deselect_all), ("Standard", self._select_standard_eeg)]:
-            btn = QPushButton(text)
-            btn.clicked.connect(slot)
-            btn_layout.addWidget(btn)
-        layout.addLayout(btn_layout)
+        lay = QVBoxLayout(self)
+        lay.setSpacing(0)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.toggle_button)
+        lay.addWidget(self.content_area)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        content = QWidget()
-        self.scroll_layout = QVBoxLayout(content)
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
+    def on_pressed(self):
+        checked = self.toggle_button.isChecked()
+        self.toggle_button.setArrowType(Qt.ArrowType.DownArrow if not checked else Qt.ArrowType.RightArrow)
+        self.anim.setDirection(QAbstractAnimation.Direction.Forward if not checked else QAbstractAnimation.Direction.Backward)
+        
+        # Calculate height
+        content_height = self.content_area.layout().sizeHint().height()
+        self.anim.setEndValue(content_height)
+        self.animation.start()
 
-        for i, name in enumerate(self.channel_names):
-            cb = QCheckBox(f"{i + 1}. {name}")
-            cb.setChecked(i in self.selected_channels if self.selected_channels else True)
-            self.channel_checkboxes.append(cb)
-            self.scroll_layout.addWidget(cb)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def _center_window(self):
-        if self.parent():
-            geo = self.parent().frameGeometry()
-            self.move(geo.center() - self.rect().center())
-
-    def _select_all(self):
-        for cb in self.channel_checkboxes: cb.setChecked(True)
-
-    def _deselect_all(self):
-        for cb in self.channel_checkboxes: cb.setChecked(False)
-
-    def _select_standard_eeg(self):
-        std = ['FP1', 'FP2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6', 'FZ', 'CZ', 'PZ']
-        self._deselect_all()
-        for i, name in enumerate(self.channel_names):
-            if name.upper() in std: self.channel_checkboxes[i].setChecked(True)
-
-    def accept(self):
-        selected = [i for i, cb in enumerate(self.channel_checkboxes) if cb.isChecked()]
-        if not selected:
-            QMessageBox.warning(self, "Warning", "Select at least one channel.")
-            return
-        self.on_apply(selected)
-        super().accept()
+    def setContentLayout(self, layout):
+        self.content_area.setLayout(layout)
+        
+    def expand(self):
+        if not self.toggle_button.isChecked():
+            self.toggle_button.click()
 
 
 class LeftSidebarWidget(QWidget):
@@ -217,18 +188,25 @@ class LeftSidebarWidget(QWidget):
         self._create_widgets()
 
     def _create_widgets(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(10)
 
-        self.toolbox = QToolBox()
-        layout.addWidget(self.toolbox)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        self.content_layout = QVBoxLayout(content)
+        self.content_layout.setSpacing(15)
+        self.content_layout.setContentsMargins(10, 10, 10, 10)
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
 
         # --- A. File / Dataset Section ---
-        file_page = QWidget()
-        file_layout = QVBoxLayout(file_page)
+        self.file_box = CollapsibleBox("Dataset")
+        file_layout = QVBoxLayout()
         file_layout.setSpacing(15)
-        file_layout.setContentsMargins(10, 15, 10, 15)
+        file_layout.setContentsMargins(5, 10, 5, 10)
         
         load_btn = QPushButton("Load EEG File")
         load_btn.setObjectName("primaryButton")
@@ -240,27 +218,31 @@ class LeftSidebarWidget(QWidget):
         # File Info Card
         info_frame = QFrame()
         info_frame.setObjectName("infoCard")
-        info_layout = QVBoxLayout(info_frame)
+        info_layout = QFormLayout(info_frame) # Changed to FormLayout for better alignment
         info_layout.setSpacing(8)
+        info_layout.setContentsMargins(10, 10, 10, 10)
         
-        self.lbl_filename = self._create_info_label("Filename", "-")
-        self.lbl_duration = self._create_info_label("Duration", "-")
-        self.lbl_sfreq = self._create_info_label("Sampling Rate", "-")
-        self.lbl_channels = self._create_info_label("Channels", "-")
+        self.lbl_filename = QLabel("-")
+        self.lbl_filename.setWordWrap(True)
+        self.lbl_duration = QLabel("-")
+        self.lbl_sfreq = QLabel("-")
+        self.lbl_channels = QLabel("-")
         
-        info_layout.addWidget(self.lbl_filename)
-        info_layout.addWidget(self.lbl_duration)
-        info_layout.addWidget(self.lbl_sfreq)
-        info_layout.addWidget(self.lbl_channels)
+        info_layout.addRow("File:", self.lbl_filename)
+        info_layout.addRow("Duration:", self.lbl_duration)
+        info_layout.addRow("Rate:", self.lbl_sfreq)
+        info_layout.addRow("Channels:", self.lbl_channels)
+        
         file_layout.addWidget(info_frame)
         
-        file_layout.addStretch()
-        self.toolbox.addItem(file_page, "Dataset")
+        self.file_box.setContentLayout(file_layout)
+        self.file_box.expand() # Expand by default
+        self.content_layout.addWidget(self.file_box)
 
         # --- B. Channel Settings ---
-        channel_page = QWidget()
-        channel_layout = QVBoxLayout(channel_page)
-        channel_layout.setContentsMargins(10, 10, 10, 10)
+        self.channel_box = CollapsibleBox("Channels")
+        channel_layout = QVBoxLayout()
+        channel_layout.setContentsMargins(5, 10, 5, 10)
         
         btn_layout = QHBoxLayout()
         for text, slot in [("All", self._select_all_channels), ("None", self._deselect_all_channels), ("Std", self._select_standard_channels)]:
@@ -273,6 +255,7 @@ class LeftSidebarWidget(QWidget):
         self.channel_scroll = QScrollArea()
         self.channel_scroll.setWidgetResizable(True)
         self.channel_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.channel_scroll.setMinimumHeight(150)
         self.channel_content = QWidget()
         self.channel_list_layout = QVBoxLayout(self.channel_content)
         self.channel_list_layout.setSpacing(2)
@@ -285,12 +268,13 @@ class LeftSidebarWidget(QWidget):
         apply_channels_btn.clicked.connect(self._apply_channel_selection)
         channel_layout.addWidget(apply_channels_btn)
 
-        self.toolbox.addItem(channel_page, "Channels")
+        self.channel_box.setContentLayout(channel_layout)
+        self.content_layout.addWidget(self.channel_box)
 
         # --- C. Filter Settings ---
-        filter_page = QWidget()
-        filter_layout = QFormLayout(filter_page)
-        filter_layout.setContentsMargins(10, 15, 10, 15)
+        self.filter_box = CollapsibleBox("Filters")
+        filter_layout = QFormLayout()
+        filter_layout.setContentsMargins(5, 10, 5, 10)
         filter_layout.setSpacing(10)
         
         self.lp_spin = QDoubleSpinBox()
@@ -317,12 +301,13 @@ class LeftSidebarWidget(QWidget):
         btn_filter_layout.addWidget(reset_filter_btn)
         filter_layout.addRow(btn_filter_layout)
         
-        self.toolbox.addItem(filter_page, "Filters")
+        self.filter_box.setContentLayout(filter_layout)
+        self.content_layout.addWidget(self.filter_box)
 
         # --- D. Display Settings ---
-        display_page = QWidget()
-        display_layout = QFormLayout(display_page)
-        display_layout.setContentsMargins(10, 15, 10, 15)
+        self.display_box = CollapsibleBox("Display")
+        display_layout = QFormLayout()
+        display_layout.setContentsMargins(5, 10, 5, 10)
         display_layout.setSpacing(10)
         
         self.time_scale_combo = QComboBox()
@@ -347,18 +332,17 @@ class LeftSidebarWidget(QWidget):
         self.theme_check.toggled.connect(self.on_theme_change)
         display_layout.addRow(self.theme_check)
         
-        self.toolbox.addItem(display_page, "Display")
-
-    def _create_info_label(self, title, value):
-        lbl = QLabel(f"<b>{title}:</b> {value}")
-        lbl.setTextFormat(Qt.TextFormat.RichText)
-        return lbl
+        self.display_box.setContentLayout(display_layout)
+        self.display_box.expand() # Expand by default
+        self.content_layout.addWidget(self.display_box)
+        
+        self.content_layout.addStretch()
 
     def update_file_info(self, filename: str, duration: float, sfreq: float, n_channels: int, channel_names: List[str]):
-        self.lbl_filename.setText(f"<b>File:</b> {filename}")
-        self.lbl_duration.setText(f"<b>Duration:</b> {duration:.1f} s")
-        self.lbl_sfreq.setText(f"<b>Rate:</b> {sfreq} Hz")
-        self.lbl_channels.setText(f"<b>Channels:</b> {n_channels}")
+        self.lbl_filename.setText(filename)
+        self.lbl_duration.setText(f"{duration:.1f} s")
+        self.lbl_sfreq.setText(f"{sfreq} Hz")
+        self.lbl_channels.setText(f"{n_channels}")
         self.channel_names = channel_names
         self._populate_channel_list()
 
@@ -516,11 +500,12 @@ class AnnotationPanel(QWidget):
         layout.addWidget(self.search_input)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Label", "Start", "Dur"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setColumnCount(4) # Added column for checkbox
+        self.table.setHorizontalHeaderLabels(["", "Label", "Start", "Dur"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -558,19 +543,46 @@ class AnnotationPanel(QWidget):
         for i, ann in enumerate(annotations):
             if filter_text and filter_text not in ann.text.lower(): continue
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(ann.text))
-            self.table.setItem(row, 1, QTableWidgetItem(f"{ann.start_time:.2f}"))
-            self.table.setItem(row, 2, QTableWidgetItem(f"{ann.duration:.2f}"))
-            self.table.item(row, 0).setData(Qt.ItemDataRole.UserRole, i)
+            
+            # Checkbox item
+            chk_item = QTableWidgetItem()
+            chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            chk_item.setCheckState(Qt.CheckState.Unchecked)
+            self.table.setItem(row, 0, chk_item)
+            
+            self.table.setItem(row, 1, QTableWidgetItem(ann.text))
+            self.table.setItem(row, 2, QTableWidgetItem(f"{ann.start_time:.2f}"))
+            self.table.setItem(row, 3, QTableWidgetItem(f"{ann.duration:.2f}"))
+            self.table.item(row, 1).setData(Qt.ItemDataRole.UserRole, i) # Store index in label column
             row += 1
 
+    def get_selected_annotation_indices(self) -> List[int]:
+        """Get indices of all selected annotations (checked or highlighted)."""
+        indices = []
+        
+        # Check for checked items
+        for row in range(self.table.rowCount()):
+            if self.table.item(row, 0).checkState() == Qt.CheckState.Checked:
+                indices.append(self.table.item(row, 1).data(Qt.ItemDataRole.UserRole))
+        
+        # If no checkboxes are checked, use the highlighted row
+        if not indices:
+            row = self.table.currentRow()
+            if row >= 0:
+                indices.append(self.table.item(row, 1).data(Qt.ItemDataRole.UserRole))
+                
+        return indices
+
+    # Kept for backward compatibility if needed, but returns first selected
     def get_selected_annotation_index(self) -> Optional[int]:
-        row = self.table.currentRow()
-        return self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) if row >= 0 else None
+        indices = self.get_selected_annotation_indices()
+        return indices[0] if indices else None
 
     def _on_table_item_clicked(self, item):
-        idx = self.table.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
-        self.on_jump_to_annotation(idx)
+        # Only jump if not clicking the checkbox column
+        if item.column() > 0:
+            idx = self.table.item(item.row(), 1).data(Qt.ItemDataRole.UserRole)
+            self.on_jump_to_annotation(idx)
 
     def _filter_annotations(self):
         pass

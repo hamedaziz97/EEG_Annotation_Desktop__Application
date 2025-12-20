@@ -326,10 +326,22 @@ class EEGDashboard(QMainWindow):
     def _on_add_annotation(self, text): pass
 
     def _on_delete_selected_annotation(self):
-        idx = self.annotation_panel.get_selected_annotation_index()
-        if idx is None: return QMessageBox.warning(self, "Warning", "Select an annotation to delete.")
-        ann = self.annotation_collection.get_all_annotations()[idx]
-        self.annotation_collection.remove_annotation(ann)
+        indices = self.annotation_panel.get_selected_annotation_indices()
+        if not indices:
+            return QMessageBox.warning(self, "Warning", "Select at least one annotation to delete.")
+        
+        all_annotations = self.annotation_collection.get_all_annotations()
+        
+        # Collect annotations to delete
+        to_delete = []
+        for idx in indices:
+            if idx < len(all_annotations):
+                to_delete.append(all_annotations[idx])
+        
+        # Remove them
+        for ann in to_delete:
+            self.annotation_collection.remove_annotation(ann)
+            
         self._update_all()
 
     def _on_edit_annotation(self, row, col):

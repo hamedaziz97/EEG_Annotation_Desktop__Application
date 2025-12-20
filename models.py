@@ -165,9 +165,10 @@ class SelectionState:
     @property
     def has_selection(self) -> bool:
         """Check if there's a valid selection."""
+        # Allow zero-duration selections for punctual events
         return (self.start_time is not None and 
                 self.end_time is not None and 
-                abs(self.end_time - self.start_time) >= 0.1)
+                abs(self.end_time - self.start_time) >= 0)
     
     @property
     def duration(self) -> float:

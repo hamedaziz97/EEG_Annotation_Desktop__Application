@@ -27,10 +27,10 @@ class AnnotationManager:
         self.predefined_annotations = ["Seizure", "Artifact", "Spike", "Sleep"]
         self.selected_channels = []
         self.annotation_colors = {
-            "Seizure": (1.0, 0.0, 0.0, 0.3),
-            "Artifact": (0.0, 1.0, 0.0, 0.3),
-            "Spike": (0.0, 0.0, 1.0, 0.3),
-            "Sleep": (1.0, 1.0, 0.0, 0.3)
+            "Seizure": "#E74C3C", # Red
+            "Artifact": "#F1C40F", # Yellow
+            "Spike": "#3498DB", # Blue
+            "Sleep": "#2ECC71" # Green
         }
 
     def set_annotation_collection(self, collection: AnnotationCollection):
@@ -85,6 +85,7 @@ class AnnotationManager:
                 self.selection_state.start_time, self.selection_state.end_time = \
                     self.selection_state.end_time, self.selection_state.start_time
 
+            # Check for valid selection (including punctual events)
             if self.selection_state.has_selection:
                 self._prompt_for_annotation()
             else:
@@ -95,6 +96,11 @@ class AnnotationManager:
     def _prompt_for_annotation(self):
         """Open a dialog to get annotation text and add the annotation."""
         dialog = AnnotationDialog(self.parent_widget, self.predefined_annotations)
+        
+        # Check if it's a punctual event and set default
+        if self.selection_state.duration < 0.01:
+            dialog.combobox.setEditText("Spike")
+
         if dialog.exec():
             annotation_text = dialog.get_result()
             if annotation_text:
@@ -122,7 +128,7 @@ class AnnotationManager:
             QMessageBox.warning(self.parent_widget, "Warning", "No annotation collection available.")
             return False
 
-        color = self.annotation_colors.get(text, (0.5, 0.5, 0.5, 0.3))
+        color = self.annotation_colors.get(text, "#95A5A6") # Default gray
 
         annotation = Annotation.create(
             text=text,
@@ -135,8 +141,9 @@ class AnnotationManager:
         self.annotation_collection.add_annotation(annotation)
         self.clear_selection()
 
-        QMessageBox.information(self.parent_widget, "Success",
-                           f"Annotation added: {annotation.start_time:.2f}s - {annotation.end_time:.2f}s")
+        # Optional: Show a small status message instead of a popup for better flow
+        # QMessageBox.information(self.parent_widget, "Success",
+        #                    f"Annotation added: {annotation.start_time:.2f}s - {annotation.end_time:.2f}s")
         return True
 
     def get_annotations_in_window(self, window_start: float, window_end: float) -> List[Annotation]:

@@ -24,7 +24,8 @@ class EEGPlotter(QWidget):
         self.eeg_data = None
         self.channel_spacing = 0
 
-        self.figure = Figure(figsize=(16, 12), dpi=100)
+        # Use a cleaner facecolor for the figure
+        self.figure = Figure(figsize=(16, 12), dpi=100, facecolor='#FFFFFF')
         self.canvas = FigureCanvasQTAgg(self.figure)
         
         layout = QVBoxLayout(self)
@@ -185,30 +186,29 @@ class EEGPlotter(QWidget):
 
         for i in range(num_channels):
             y_offset = (num_channels - 1 - i) * channel_spacing
-            color = 'red' if channel_names[i] in self.selected_annotation_channels else 'b'
-            ax.plot(time_axis, window_data[i] + y_offset, color=color, linewidth=0.7)
+            # Use a less saturated, professional color (dark slate blue)
+            color = '#E74C3C' if channel_names[i] in self.selected_annotation_channels else '#2C3E50'
+            ax.plot(time_axis, window_data[i] + y_offset, color=color, linewidth=0.6)
 
     def _customize_plot(self, ax, time_axis: np.ndarray,
                        channel_names: List[str], display_settings: DisplaySettings, 
                        current_window_start: float, all_channel_names: List[str]) -> None:
-        channel_info = (f" ({len(channel_names)}/{len(all_channel_names)} channels)" 
-                       if len(channel_names) != len(all_channel_names) else "")
         
+        # Clean title with less visual noise
         ax.set_title(
-            f'EEG Data - Window {current_window_start:.1f}-{current_window_start + display_settings.time_scale:.1f}s '
-            f'| Scale: {display_settings.time_scale}s/{display_settings.amplitude_scale}x '
-            f'| Filters: LP={display_settings.lowpass_filter or "None"}, HP={display_settings.highpass_filter or "None"}',
-            fontsize=10, pad=2, loc='center'
+            f'Window: {current_window_start:.1f}s - {current_window_start + display_settings.time_scale:.1f}s',
+            fontsize=10, pad=10, loc='left', color='#555555'
         )
 
-        ax.set_xlabel('Time (seconds)', fontsize=9, labelpad=2)
-        ax.set_ylabel('Channels', fontsize=9, labelpad=2)
+        ax.set_xlabel('Time (seconds)', fontsize=9, labelpad=5, color='#555555')
+        # ax.set_ylabel('Channels', fontsize=9, labelpad=5, color='#555555') # Redundant with labels
         
         time_grid_lines = np.arange(np.ceil(time_axis[0]), np.floor(time_axis[-1]) + 1)
         for grid_time in time_grid_lines:
-            ax.axvline(x=grid_time, color='gray', alpha=0.3, linestyle='--', linewidth=0.5)
+            ax.axvline(x=grid_time, color='#E0E0E0', alpha=0.5, linestyle='--', linewidth=0.5)
         
-        ax.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
+        # Very subtle horizontal grid
+        ax.grid(True, alpha=0.1, linestyle='-', linewidth=0.5, color='#E0E0E0')
         
         time_margin = (time_axis[-1] - time_axis[0]) * 0.01 if time_axis.size > 0 else 0.01
         ax.set_xlim(time_axis[0] - time_margin, time_axis[-1] + time_margin) if time_axis.size > 0 else None
@@ -216,17 +216,12 @@ class EEGPlotter(QWidget):
         num_channels = len(channel_names)
         
         # Calculate geometric center of the channel baselines
-        # Bottom channel is at 0, top channel is at (num_channels - 1) * spacing
         geometric_center = (num_channels - 1) * self.channel_spacing / 2.0
         
         # Calculate view height with margins
-        # We want to see from -0.5*spacing to (num_channels - 0.5)*spacing
-        # Total height = num_channels * spacing
-        # Apply zoom factor
         zoom_factor = 1.0 / display_settings.amplitude_scale
         view_height = num_channels * self.channel_spacing * zoom_factor
         
-        # Ensure a minimum view height to avoid errors
         if view_height <= 0:
             view_height = self.channel_spacing
             
@@ -237,14 +232,16 @@ class EEGPlotter(QWidget):
 
         y_positions = [(num_channels - 1 - i) * self.channel_spacing for i in range(num_channels)]
         ax.set_yticks(y_positions)
-        ax.set_yticklabels(channel_names, fontsize=7)
-        ax.tick_params(axis='y', which='both', length=0, pad=2)
+        ax.set_yticklabels(channel_names, fontsize=8, color='#333333')
+        ax.tick_params(axis='y', which='both', length=0, pad=5)
+        ax.tick_params(axis='x', colors='#555555')
         ax.yaxis.set_ticks_position('left')
 
+        # Minimalist spines
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_linewidth(0.5)
-        ax.spines['bottom'].set_linewidth(0.5)
+        ax.spines['left'].set_visible(False) # Remove left spine, rely on ticks
+        ax.spines['bottom'].set_color('#CCCCCC')
     
     def _draw_annotations(self, ax, annotations: List[Annotation], 
                          window_start: float, window_size: float, channel_spacing: float) -> None:
@@ -253,26 +250,46 @@ class EEGPlotter(QWidget):
         num_displayed_channels = len(displayed_channel_names)
 
         for annotation in annotations:
-            if not annotation.channels:
-                if annotation.start_time < window_end and annotation.end_time > window_start:
-                    visible_start = max(annotation.start_time, window_start)
-                    visible_end = min(annotation.end_time, window_end)
-                    ax.axvspan(visible_start, visible_end, color=annotation.color, zorder=0)
+            # Punctual event (zero duration)
+            if annotation.duration < 0.01:
+                if window_start <= annotation.start_time < window_end:
+                    if not annotation.channels: # Apply to all channels
+                        ax.axvline(x=annotation.start_time, color=annotation.color, linestyle='--', linewidth=1.5, zorder=1)
+                    else: # Apply to specific channels
+                        for channel_name in annotation.channels:
+                            if channel_name in displayed_channel_names:
+                                try:
+                                    display_index = displayed_channel_names.index(channel_name)
+                                    y_pos = (num_displayed_channels - 1 - display_index) * channel_spacing
+                                    # Draw a short vertical line segment for the channel
+                                    ax.plot([annotation.start_time, annotation.start_time], 
+                                            [y_pos - channel_spacing / 2, y_pos + channel_spacing / 2],
+                                            color=annotation.color, linestyle='-', linewidth=2, zorder=1)
+                                except ValueError:
+                                    pass
+
+            # Ranged event
             else:
-                for channel_name in annotation.channels:
-                    if channel_name in displayed_channel_names:
-                        if annotation.start_time < window_end and annotation.end_time > window_start:
-                            visible_start = max(annotation.start_time, window_start)
-                            visible_end = min(annotation.end_time, window_end)
-                            try:
-                                display_index = displayed_channel_names.index(channel_name)
-                                y_pos = (num_displayed_channels - 1 - display_index) * channel_spacing
-                                ax.axhspan(y_pos - channel_spacing / 2, y_pos + channel_spacing / 2, 
-                                          xmin=(visible_start - window_start) / window_size, 
-                                          xmax=(visible_end - window_start) / window_size, 
-                                          color=annotation.color, zorder=0)
-                            except ValueError:
-                                pass
+                if not annotation.channels: # Annotation applies to all channels
+                    if annotation.start_time < window_end and annotation.end_time > window_start:
+                        visible_start = max(annotation.start_time, window_start)
+                        visible_end = min(annotation.end_time, window_end)
+                        ax.axvspan(visible_start, visible_end, color=annotation.color, alpha=0.2, zorder=0)
+                else: # Annotation applies to specific channels
+                    for channel_name in annotation.channels:
+                        if channel_name in displayed_channel_names:
+                            if annotation.start_time < window_end and annotation.end_time > window_start:
+                                visible_start = max(annotation.start_time, window_start)
+                                visible_end = min(annotation.end_time, window_end)
+                                try:
+                                    display_index = displayed_channel_names.index(channel_name)
+                                    y_pos = (num_displayed_channels - 1 - display_index) * channel_spacing
+                                    ax.axhspan(y_pos - channel_spacing / 2, y_pos + channel_spacing / 2, 
+                                              xmin=(visible_start - window_start) / window_size, 
+                                              xmax=(visible_end - window_start) / window_size, 
+                                              color=annotation.color, alpha=0.3, zorder=0)
+                                except ValueError:
+                                    pass
     
     def _draw_selection(self, ax, selection_state: SelectionState, 
                        window_start: float, window_size: float) -> None:
@@ -283,7 +300,8 @@ class EEGPlotter(QWidget):
         selection_end = min(selection_state.end_time, window_end)
         
         if selection_start < selection_end:
-            ax.axvspan(selection_start, selection_end, alpha=0.3, color='yellow', zorder=10)
+            # Muted yellow for selection
+            ax.axvspan(selection_start, selection_end, alpha=0.2, color='#F1C40F', zorder=10)
     
     def clear(self):
         """Clear the current plot."""
